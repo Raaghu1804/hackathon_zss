@@ -1,14 +1,41 @@
-// frontend/src/App.jsx
+import React, { useState, useEffect, useCallback } from 'react';
+import { Activity, Cpu, MessageSquare, BarChart3, AlertCircle, TrendingUp, Server, Gauge, Cloud, Flame, Leaf, Map, Eye } from 'lucide-react';
 
-import React, { useState, useEffect } from 'react';
-import { Activity, Cpu, MessageSquare, BarChart3, AlertCircle, TrendingUp, Server, Gauge } from 'lucide-react';
-
-// API Service
+// Enhanced API Service
 const API_BASE = 'http://localhost:8000';
 
 const api = {
   getUnitsStatus: async () => {
     const response = await fetch(`${API_BASE}/api/units/status`);
+    return response.json();
+  },
+  getPublicData: async () => {
+    const response = await fetch(`${API_BASE}/api/public-data/current`);
+    return response.json();
+  },
+  getSatelliteData: async (days = 7) => {
+    const response = await fetch(`${API_BASE}/api/public-data/satellite/${days}`);
+    return response.json();
+  },
+  optimizeFuelMix: async (totalEnergy, maxCO2) => {
+    const params = new URLSearchParams({ total_energy: totalEnergy });
+    if (maxCO2) params.append('max_co2', maxCO2);
+    const response = await fetch(`${API_BASE}/api/optimization/fuel-mix?${params}`, { method: 'POST' });
+    return response.json();
+  },
+  optimizeProcess: async (includePublicData = true) => {
+    const response = await fetch(`${API_BASE}/api/optimization/process?include_public_data=${includePublicData}`, {
+      method: 'POST'
+    });
+    return response.json();
+  },
+  comprehensiveOptimization: async () => {
+    const response = await fetch(`${API_BASE}/api/optimization/comprehensive`, { method: 'POST' });
+    return response.json();
+  },
+  validateChemistry: async (composition) => {
+    const params = new URLSearchParams(composition);
+    const response = await fetch(`${API_BASE}/api/chemistry/validate?${params}`);
     return response.json();
   },
   getAgentCommunications: async () => {
@@ -22,15 +49,11 @@ const api = {
       body: JSON.stringify({ question })
     });
     return response.json();
-  },
-  getHistoricalData: async (unit, hours = 24) => {
-    const response = await fetch(`${API_BASE}/api/sensors/historical/${unit}?hours=${hours}`);
-    return response.json();
   }
 };
 
-// Metric Card Component
-const MetricCard = ({ title, value, unit, trend, status }) => {
+// Enhanced Metric Card with Public Data
+const EnhancedMetricCard = ({ title, value, unit, trend, status, source, confidence }) => {
   const statusColors = {
     normal: '#4caf50',
     warning: '#ff9800',
@@ -38,13 +61,21 @@ const MetricCard = ({ title, value, unit, trend, status }) => {
   };
 
   return (
-    <div className="metric-card">
+    <div className="metric-card enhanced">
       <div className="metric-header">
         <h3>{title}</h3>
-        <span className={`status-badge status-${status}`}>
-          <span className="status-dot" style={{ backgroundColor: statusColors[status] }}></span>
-          {status}
-        </span>
+        <div className="metric-meta">
+          {source && (
+            <span className="data-source">
+              <Cloud size={14} />
+              {source}
+            </span>
+          )}
+          <span className={`status-badge status-${status}`}>
+            <span className="status-dot" style={{ backgroundColor: statusColors[status] }}></span>
+            {status}
+          </span>
+        </div>
       </div>
       <div className="metric-value">
         <span className="value">{value}</span>
@@ -56,125 +87,191 @@ const MetricCard = ({ title, value, unit, trend, status }) => {
           <span>{trend}%</span>
         </div>
       )}
-    </div>
-  );
-};
-
-// Unit Status Card Component
-const UnitStatusCard = ({ unit, data }) => {
-  const getUnitIcon = (unitName) => {
-    switch(unitName) {
-      case 'precalciner': return <Server size={24} />;
-      case 'rotary_kiln': return <Cpu size={24} />;
-      case 'clinker_cooler': return <Activity size={24} />;
-      default: return <Server size={24} />;
-    }
-  };
-
-  const formatUnitName = (name) => {
-    return name.split('_').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  };
-
-  return (
-    <div className="unit-card">
-      <div className="unit-header">
-        <div className="unit-title">
-          {getUnitIcon(unit)}
-          <h2>{formatUnitName(unit)}</h2>
-        </div>
-        <span className={`status-indicator status-${data?.status || 'normal'}`}>
-          {data?.status || 'normal'}
-        </span>
-      </div>
-      
-      <div className="unit-metrics">
-        <div className="metric-row">
-          <span className="metric-label">Health Score</span>
-          <div className="metric-bar">
-            <div 
-              className="metric-bar-fill"
-              style={{ 
-                width: `${data?.overall_health || 0}%`,
-                backgroundColor: data?.overall_health > 70 ? '#4caf50' : 
-                               data?.overall_health > 40 ? '#ff9800' : '#f44336'
-              }}
-            />
-          </div>
-          <span className="metric-percentage">{data?.overall_health || 0}%</span>
-        </div>
-        
-        <div className="metric-row">
-          <span className="metric-label">Efficiency</span>
-          <div className="metric-bar">
-            <div 
-              className="metric-bar-fill"
-              style={{ 
-                width: `${data?.efficiency || 0}%`,
-                backgroundColor: '#00bcd4'
-              }}
-            />
-          </div>
-          <span className="metric-percentage">{data?.efficiency || 0}%</span>
-        </div>
-      </div>
-      
-      {data?.sensors && (
-        <div className="sensor-grid">
-          {data.sensors.slice(0, 4).map((sensor, idx) => (
-            <div key={idx} className="sensor-item">
-              <span className="sensor-name">{sensor.sensor_name.replace(/_/g, ' ')}</span>
-              <span className={`sensor-value ${sensor.is_anomaly ? 'anomaly' : ''}`}>
-                {sensor.value.toFixed(2)} {sensor.unit_measure}
-              </span>
-            </div>
-          ))}
+      {confidence && (
+        <div className="confidence-bar">
+          <div className="confidence-fill" style={{ width: `${confidence * 100}%` }}></div>
+          <span className="confidence-text">Confidence: {(confidence * 100).toFixed(0)}%</span>
         </div>
       )}
     </div>
   );
 };
 
-// Communication Item Component
-const CommunicationItem = ({ comm }) => {
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
+// Public Data Panel
+const PublicDataPanel = ({ publicData, loading }) => {
+  if (loading) {
+    return <div className="public-data-panel loading">Loading public data...</div>;
+  }
 
-  const severityColors = {
-    info: '#2196f3',
-    warning: '#ff9800',
-    critical: '#f44336'
+  if (!publicData) {
+    return <div className="public-data-panel">No public data available</div>;
+  }
+
+  const { data, quality_metrics } = publicData;
+  const sources = data?.data_sources || {};
+
+  return (
+    <div className="public-data-panel">
+      <div className="panel-header">
+        <h2>
+          <Cloud size={20} />
+          Public Data Integration
+        </h2>
+        <div className="quality-score">
+          Data Quality: {quality_metrics?.overall_score?.toFixed(0)}%
+        </div>
+      </div>
+
+      <div className="data-sources-grid">
+        {sources.weather && (
+          <div className="data-source-card">
+            <h4>Weather Conditions</h4>
+            <div className="data-items">
+              <span>Temperature: {sources.weather.temperature}°C</span>
+              <span>Humidity: {sources.weather.humidity}%</span>
+              <span>Wind: {sources.weather.wind_speed} m/s</span>
+            </div>
+          </div>
+        )}
+
+        {sources.air_quality && (
+          <div className="data-source-card">
+            <h4>Air Quality</h4>
+            <div className="data-items">
+              {Object.entries(sources.air_quality).map(([station, data]) => (
+                data && <span key={station}>PM2.5: {data.pm25} µg/m³</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {sources.satellite_thermal && (
+          <div className="data-source-card">
+            <h4>Satellite Thermal</h4>
+            <div className="data-items">
+              <span>Surface Temp: {sources.satellite_thermal.median_temperature?.toFixed(1)}°C</span>
+              <span>
+                <Eye size={14} />
+                Last 7 days
+              </span>
+            </div>
+          </div>
+        )}
+
+        {sources.alternative_fuels && (
+          <div className="data-source-card">
+            <h4>Alternative Fuels</h4>
+            <div className="fuel-availability">
+              {Object.entries(sources.alternative_fuels.fuels || {}).slice(0, 3).map(([fuel, data]) => (
+                <div key={fuel} className="fuel-item">
+                  <Leaf size={14} />
+                  <span>{fuel.replace('_', ' ')}: {data.availability_tonnes?.toFixed(0)}t</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Optimization Panel
+const OptimizationPanel = ({ onOptimize }) => {
+  const [optimizationType, setOptimizationType] = useState('fuel');
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [results, setResults] = useState(null);
+
+  const handleOptimize = async () => {
+    setIsOptimizing(true);
+    try {
+      let result;
+      switch (optimizationType) {
+        case 'fuel':
+          result = await api.optimizeFuelMix(200, 75);
+          break;
+        case 'process':
+          result = await api.optimizeProcess(true);
+          break;
+        case 'comprehensive':
+          result = await api.comprehensiveOptimization();
+          break;
+      }
+      setResults(result);
+      if (onOptimize) onOptimize(result);
+    } catch (error) {
+      console.error('Optimization error:', error);
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   return (
-    <div className="comm-item">
-      <div className="comm-header">
-        <div className="comm-agents">
-          <span className="agent-from">{comm.from_agent}</span>
-          <span className="arrow">→</span>
-          <span className="agent-to">{comm.to_agent}</span>
-        </div>
-        <div className="comm-meta">
-          <span 
-            className="severity-badge"
-            style={{ backgroundColor: severityColors[comm.severity] }}
-          >
-            {comm.severity}
-          </span>
-          <span className="timestamp">{formatTime(comm.timestamp)}</span>
-        </div>
+    <div className="optimization-panel">
+      <div className="panel-header">
+        <h2>
+          <Flame size={20} />
+          AI Optimization Engine
+        </h2>
+        <select
+          value={optimizationType}
+          onChange={(e) => setOptimizationType(e.target.value)}
+          className="optimization-selector"
+        >
+          <option value="fuel">Fuel Mix Optimization</option>
+          <option value="process">Process Optimization</option>
+          <option value="comprehensive">Comprehensive Plant</option>
+        </select>
       </div>
-      <div className="comm-message">{comm.message}</div>
-      {comm.action_taken && (
-        <div className="comm-action">
-          <strong>Action:</strong> {comm.action_taken}
+
+      <button
+        className={`optimize-button ${isOptimizing ? 'optimizing' : ''}`}
+        onClick={handleOptimize}
+        disabled={isOptimizing}
+      >
+        {isOptimizing ? 'Optimizing...' : 'Run Optimization'}
+      </button>
+
+      {results && (
+        <div className="optimization-results">
+          {results.optimal_mix && (
+            <div className="fuel-mix-results">
+              <h4>Optimal Fuel Mix</h4>
+              {Object.entries(results.optimal_mix).map(([fuel, percentage]) => (
+                <div key={fuel} className="fuel-bar">
+                  <span>{fuel.replace('_', ' ')}</span>
+                  <div className="percentage-bar">
+                    <div className="fill" style={{ width: `${percentage}%` }}></div>
+                  </div>
+                  <span>{percentage}%</span>
+                </div>
+              ))}
+              {results.co2_reduction && (
+                <div className="co2-reduction">
+                  <Leaf size={16} />
+                  CO₂ Reduction: {results.co2_reduction.reduction_percentage}%
+                </div>
+              )}
+            </div>
+          )}
+
+          {results.optimal_parameters && (
+            <div className="process-results">
+              <h4>Optimal Parameters</h4>
+              {Object.entries(results.optimal_parameters).map(([param, value]) => (
+                <div key={param} className="parameter-item">
+                  <span>{param.replace('_', ' ')}</span>
+                  <span className="value">{typeof value === 'number' ? value.toFixed(2) : value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {results.confidence && (
+            <div className="optimization-confidence">
+              Confidence: {(results.confidence * 100).toFixed(0)}%
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -185,44 +282,51 @@ const CommunicationItem = ({ comm }) => {
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [unitsStatus, setUnitsStatus] = useState([]);
+  const [publicData, setPublicData] = useState(null);
   const [communications, setCommunications] = useState([]);
   const [analyticsQuery, setAnalyticsQuery] = useState('');
   const [analyticsResponse, setAnalyticsResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [latestOptimization, setLatestOptimization] = useState(null);
 
   useEffect(() => {
     // Load initial data
     loadUnitsStatus();
+    loadPublicData();
     loadCommunications();
-    
+
     // Setup WebSocket connection
     const ws = new WebSocket('ws://localhost:8000/ws');
-    
+
     ws.onopen = () => {
       setWsConnected(true);
       console.log('WebSocket connected');
     };
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'sensor_update') {
-        // Update real-time data
         loadUnitsStatus();
+      } else if (data.type === 'optimization_update') {
+        setLatestOptimization(data.optimization);
       }
     };
-    
+
     ws.onclose = () => {
       setWsConnected(false);
       console.log('WebSocket disconnected');
     };
-    
+
     // Periodic refresh
     const interval = setInterval(() => {
-      if (activeTab === 'dashboard') loadUnitsStatus();
+      if (activeTab === 'dashboard') {
+        loadUnitsStatus();
+        loadPublicData();
+      }
       if (activeTab === 'communications') loadCommunications();
-    }, 5000);
-    
+    }, 10000);
+
     return () => {
       ws.close();
       clearInterval(interval);
@@ -238,6 +342,15 @@ function App() {
     }
   };
 
+  const loadPublicData = async () => {
+    try {
+      const data = await api.getPublicData();
+      setPublicData(data);
+    } catch (error) {
+      console.error('Error loading public data:', error);
+    }
+  };
+
   const loadCommunications = async () => {
     try {
       const data = await api.getAgentCommunications();
@@ -249,7 +362,7 @@ function App() {
 
   const handleAnalyticsQuery = async () => {
     if (!analyticsQuery.trim()) return;
-    
+
     setLoading(true);
     try {
       const response = await api.queryAnalytics(analyticsQuery);
@@ -260,146 +373,98 @@ function App() {
     setLoading(false);
   };
 
-  const renderDashboard = () => (
-    <div className="dashboard-container">
+  const renderEnhancedDashboard = () => (
+    <div className="enhanced-dashboard">
       <div className="dashboard-header">
-        <h1>Plant Operations Dashboard</h1>
-        <div className="connection-status">
-          <span className={`status-dot ${wsConnected ? 'connected' : 'disconnected'}`}></span>
-          {wsConnected ? 'Real-time Connected' : 'Connecting...'}
-        </div>
-      </div>
-      
-      <div className="overview-cards">
-        <MetricCard 
-          title="Plant Efficiency" 
-          value="87.5" 
-          unit="%" 
-          trend={2.3}
-          status="normal"
-        />
-        <MetricCard 
-          title="Energy Consumption" 
-          value="142.8" 
-          unit="MW" 
-          trend={-1.2}
-          status="normal"
-        />
-        <MetricCard 
-          title="Production Rate" 
-          value="285" 
-          unit="t/h" 
-          trend={0.8}
-          status="warning"
-        />
-        <MetricCard 
-          title="Active Alerts" 
-          value="3" 
-          unit="" 
-          status="warning"
-        />
-      </div>
-      
-      <div className="units-grid">
-        {unitsStatus.map((unit, idx) => (
-          <UnitStatusCard key={idx} unit={unit.unit} data={unit} />
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderCommunications = () => (
-    <div className="communications-container">
-      <div className="comm-header">
-        <h1>Agent Communications</h1>
-        <div className="comm-stats">
-          <span>Total: {communications.length}</span>
-          <span className="critical-count">
-            Critical: {communications.filter(c => c.severity === 'critical').length}
+        <h1>AI-Driven Cement Plant Optimization</h1>
+        <div className="header-status">
+          <span className={`connection-status ${wsConnected ? 'connected' : 'disconnected'}`}>
+            <span className="status-dot"></span>
+            {wsConnected ? 'Real-time Connected' : 'Connecting...'}
+          </span>
+          <span className="data-integration">
+            <Cloud size={16} />
+            Public Data: Active
           </span>
         </div>
       </div>
-      
-      <div className="comm-list">
-        {communications.length === 0 ? (
-          <div className="empty-state">
-            <MessageSquare size={48} />
-            <p>No agent communications yet</p>
-          </div>
-        ) : (
-          communications.map((comm, idx) => (
-            <CommunicationItem key={idx} comm={comm} />
-          ))
-        )}
-      </div>
-    </div>
-  );
 
-  const renderAnalytics = () => (
-    <div className="analytics-container">
-      <div className="analytics-header">
-        <h1>AI Analytics</h1>
-        <p>Ask questions about plant operations and receive AI-powered insights</p>
+      <div className="overview-section">
+        <EnhancedMetricCard
+          title="Plant Efficiency"
+          value="87.5"
+          unit="%"
+          trend={2.3}
+          status="normal"
+          source="Satellite"
+          confidence={0.92}
+        />
+        <EnhancedMetricCard
+          title="Energy Consumption"
+          value="142.8"
+          unit="MW"
+          trend={-1.2}
+          status="normal"
+          source="Grid Data"
+          confidence={0.95}
+        />
+        <EnhancedMetricCard
+          title="CO₂ Emissions"
+          value="825"
+          unit="kg/t"
+          trend={-3.5}
+          status="warning"
+          source="CPCB"
+          confidence={0.88}
+        />
+        <EnhancedMetricCard
+          title="Alternative Fuel"
+          value="35"
+          unit="%"
+          trend={5.2}
+          status="normal"
+          source="Calculated"
+          confidence={0.91}
+        />
       </div>
-      
-      <div className="query-section">
-        <div className="query-input-wrapper">
-          <input
-            type="text"
-            className="query-input"
-            placeholder="Ask about plant operations, efficiency, or optimization..."
-            value={analyticsQuery}
-            onChange={(e) => setAnalyticsQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAnalyticsQuery()}
-          />
-          <button 
-            className="query-button"
-            onClick={handleAnalyticsQuery}
-            disabled={loading}
-          >
-            {loading ? 'Analyzing...' : 'Analyze'}
-          </button>
-        </div>
-        
-        <div className="query-suggestions">
-          <span>Try asking:</span>
-          <button 
-            className="suggestion-chip"
-            onClick={() => setAnalyticsQuery("What is the current efficiency of the pre-calciner?")}
-          >
-            Pre-calciner efficiency
-          </button>
-          <button 
-            className="suggestion-chip"
-            onClick={() => setAnalyticsQuery("How can we optimize the rotary kiln temperature?")}
-          >
-            Kiln optimization
-          </button>
-          <button 
-            className="suggestion-chip"
-            onClick={() => setAnalyticsQuery("What are the main issues in the clinker cooler?")}
-          >
-            Cooler issues
-          </button>
-        </div>
-      </div>
-      
-      {analyticsResponse && (
-        <div className="response-section">
-          <div className="response-header">
-            <div className="responding-agent">
-              <Cpu size={20} />
-              <span>{analyticsResponse.responding_agent}</span>
-            </div>
-            <div className="confidence">
-              Confidence: {(analyticsResponse.confidence * 100).toFixed(0)}%
-            </div>
-          </div>
-          <div className="response-content">
-            {analyticsResponse.answer}
-          </div>
+
+      <PublicDataPanel publicData={publicData} loading={!publicData} />
+
+      <OptimizationPanel onOptimize={setLatestOptimization} />
+
+      {latestOptimization && (
+        <div className="latest-optimization-alert">
+          <AlertCircle size={20} />
+          <span>New optimization available with {latestOptimization.confidence * 100}% confidence</span>
         </div>
       )}
+
+      <div className="units-grid">
+        {unitsStatus.map((unit, idx) => (
+          <div key={idx} className="enhanced-unit-card">
+            <div className="unit-header">
+              <h3>{unit.unit.replace('_', ' ').toUpperCase()}</h3>
+              <span className={`status-${unit.status}`}>{unit.status}</span>
+            </div>
+            <div className="unit-metrics">
+              <div className="health-bar">
+                <span>Health</span>
+                <div className="bar">
+                  <div className="fill" style={{ width: `${unit.overall_health}%` }}></div>
+                </div>
+                <span>{unit.overall_health}%</span>
+              </div>
+              <div className="efficiency-bar">
+                <span>Efficiency</span>
+                <div className="bar">
+                  <div className="fill" style={{ width: `${unit.efficiency}%` }}></div>
+                </div>
+                <span>{unit.efficiency}%</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 
@@ -408,25 +473,25 @@ function App() {
       <nav className="navbar">
         <div className="nav-brand">
           <Gauge size={28} />
-          <span>Cement AI Optimizer</span>
+          <span>Cement AI Optimizer 2.0</span>
         </div>
-        
+
         <div className="nav-tabs">
-          <button 
+          <button
             className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
           >
             <Activity size={20} />
             Dashboard
           </button>
-          <button 
+          <button
             className={`nav-tab ${activeTab === 'communications' ? 'active' : ''}`}
             onClick={() => setActiveTab('communications')}
           >
             <MessageSquare size={20} />
             Communications
           </button>
-          <button 
+          <button
             className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
@@ -434,27 +499,20 @@ function App() {
             AI Analytics
           </button>
         </div>
-        
-        <div className="nav-actions">
-          <button className="nav-alert">
-            <AlertCircle size={20} />
-            <span className="alert-badge">3</span>
-          </button>
-        </div>
       </nav>
-      
+
       <main className="main-content">
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'communications' && renderCommunications()}
-        {activeTab === 'analytics' && renderAnalytics()}
+        {activeTab === 'dashboard' && renderEnhancedDashboard()}
       </main>
-      
+
       <style jsx>{`
         .app {
           min-height: 100vh;
           background: linear-gradient(135deg, #0a0e1a 0%, #141b2d 100%);
+          color: #e0e6ed;
+          font-family: 'Inter', -apple-system, sans-serif;
         }
-        
+
         .navbar {
           display: flex;
           align-items: center;
@@ -464,7 +522,7 @@ function App() {
           backdrop-filter: blur(10px);
           border-bottom: 1px solid #2a3553;
         }
-        
+
         .nav-brand {
           display: flex;
           align-items: center;
@@ -473,12 +531,12 @@ function App() {
           font-weight: 700;
           color: #00bcd4;
         }
-        
+
         .nav-tabs {
           display: flex;
           gap: 0.5rem;
         }
-        
+
         .nav-tab {
           display: flex;
           align-items: center;
@@ -490,70 +548,37 @@ function App() {
           cursor: pointer;
           border-radius: 8px;
           transition: all 0.3s ease;
-          font-size: 0.95rem;
         }
-        
-        .nav-tab:hover {
-          background: rgba(0, 188, 212, 0.1);
-          color: #00bcd4;
-        }
-        
+
         .nav-tab.active {
           background: rgba(0, 188, 212, 0.15);
           color: #00bcd4;
-          font-weight: 600;
         }
-        
-        .nav-actions {
-          display: flex;
-          gap: 1rem;
-        }
-        
-        .nav-alert {
-          position: relative;
-          padding: 0.5rem;
-          background: transparent;
-          border: 1px solid #2a3553;
-          border-radius: 8px;
-          color: #a8b2d1;
-          cursor: pointer;
-        }
-        
-        .alert-badge {
-          position: absolute;
-          top: -4px;
-          right: -4px;
-          background: #f44336;
-          color: white;
-          font-size: 0.7rem;
-          padding: 0.15rem 0.4rem;
-          border-radius: 10px;
-        }
-        
+
         .main-content {
           padding: 2rem;
           max-width: 1600px;
           margin: 0 auto;
         }
-        
-        /* Dashboard Styles */
-        .dashboard-container {
+
+        .enhanced-dashboard {
           display: flex;
           flex-direction: column;
           gap: 2rem;
         }
-        
+
         .dashboard-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
-        
-        .dashboard-header h1 {
-          font-size: 2rem;
-          font-weight: 600;
+
+        .header-status {
+          display: flex;
+          gap: 1.5rem;
+          align-items: center;
         }
-        
+
         .connection-status {
           display: flex;
           align-items: center;
@@ -561,440 +586,253 @@ function App() {
           padding: 0.5rem 1rem;
           background: rgba(26, 34, 53, 0.7);
           border-radius: 20px;
-          font-size: 0.9rem;
         }
-        
+
         .status-dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-        }
-        
-        .status-dot.connected {
           background: #4caf50;
           animation: pulse 2s infinite;
         }
-        
-        .status-dot.disconnected {
-          background: #f44336;
+
+        .data-integration {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          color: #00bcd4;
         }
-        
-        .overview-cards {
+
+        .overview-section {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
           gap: 1.5rem;
         }
-        
-        .metric-card {
+
+        .metric-card.enhanced {
           background: rgba(26, 34, 53, 0.7);
           border: 1px solid #2a3553;
           border-radius: 12px;
           padding: 1.5rem;
           transition: all 0.3s ease;
         }
-        
-        .metric-card:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-          border-color: #00bcd4;
-        }
-        
-        .metric-header {
+
+        .metric-meta {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1rem;
-        }
-        
-        .metric-header h3 {
-          font-size: 0.9rem;
-          color: #a8b2d1;
-          font-weight: 500;
-        }
-        
-        .status-badge {
-          display: flex;
-          align-items: center;
-          gap: 0.3rem;
-          padding: 0.25rem 0.75rem;
-          border-radius: 12px;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          font-weight: 600;
-        }
-        
-        .status-normal {
-          background: rgba(76, 175, 80, 0.1);
-          color: #4caf50;
-        }
-        
-        .status-warning {
-          background: rgba(255, 152, 0, 0.1);
-          color: #ff9800;
-        }
-        
-        .status-critical {
-          background: rgba(244, 67, 54, 0.1);
-          color: #f44336;
-        }
-        
-        .metric-value {
-          display: flex;
-          align-items: baseline;
           gap: 0.5rem;
-          margin-bottom: 0.5rem;
+          align-items: center;
         }
-        
-        .metric-value .value {
-          font-size: 2rem;
-          font-weight: 700;
-        }
-        
-        .metric-value .unit {
-          font-size: 1rem;
-          color: #a8b2d1;
-        }
-        
-        .metric-trend {
+
+        .data-source {
           display: flex;
           align-items: center;
-          gap: 0.3rem;
-          color: #4caf50;
-          font-size: 0.9rem;
+          gap: 0.25rem;
+          font-size: 0.75rem;
+          color: #64748b;
         }
-        
-        .units-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-          gap: 1.5rem;
+
+        .confidence-bar {
+          margin-top: 1rem;
+          position: relative;
+          height: 4px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 2px;
         }
-        
-        .unit-card {
+
+        .confidence-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #00bcd4, #0097a7);
+          border-radius: 2px;
+          transition: width 0.5s ease;
+        }
+
+        .confidence-text {
+          position: absolute;
+          top: -20px;
+          right: 0;
+          font-size: 0.75rem;
+          color: #64748b;
+        }
+
+        .public-data-panel {
           background: rgba(26, 34, 53, 0.7);
           border: 1px solid #2a3553;
           border-radius: 12px;
           padding: 1.5rem;
         }
-        
-        .unit-header {
+
+        .panel-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: 1.5rem;
         }
-        
-        .unit-title {
+
+        .panel-header h2 {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
-        }
-        
-        .unit-title h2 {
+          gap: 0.5rem;
           font-size: 1.25rem;
-          font-weight: 600;
         }
-        
-        .unit-metrics {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          margin-bottom: 1.5rem;
-        }
-        
-        .metric-row {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .metric-label {
-          flex: 0 0 120px;
+
+        .quality-score {
+          padding: 0.5rem 1rem;
+          background: rgba(0, 188, 212, 0.1);
+          border: 1px solid rgba(0, 188, 212, 0.3);
+          border-radius: 20px;
           font-size: 0.9rem;
+        }
+
+        .data-sources-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 1rem;
+        }
+
+        .data-source-card {
+          background: rgba(20, 27, 45, 0.5);
+          border-radius: 8px;
+          padding: 1rem;
+        }
+
+        .data-source-card h4 {
+          font-size: 0.9rem;
+          margin-bottom: 0.75rem;
           color: #a8b2d1;
         }
-        
-        .metric-bar {
-          flex: 1;
+
+        .data-items {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          font-size: 0.85rem;
+        }
+
+        .fuel-item {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .optimization-panel {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+        }
+
+        .optimization-selector {
+          padding: 0.5rem 1rem;
+          background: rgba(20, 27, 45, 0.8);
+          border: 1px solid #2a3553;
+          border-radius: 8px;
+          color: #e0e6ed;
+        }
+
+        .optimize-button {
+          width: 100%;
+          padding: 1rem;
+          margin: 1rem 0;
+          background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+          border: none;
+          border-radius: 8px;
+          color: white;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .optimize-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 5px 15px rgba(0, 188, 212, 0.3);
+        }
+
+        .optimization-results {
+          margin-top: 1.5rem;
+          padding: 1rem;
+          background: rgba(20, 27, 45, 0.5);
+          border-radius: 8px;
+        }
+
+        .fuel-bar {
+          display: grid;
+          grid-template-columns: 100px 1fr 50px;
+          align-items: center;
+          gap: 1rem;
+          margin: 0.5rem 0;
+        }
+
+        .percentage-bar {
           height: 8px;
           background: rgba(255, 255, 255, 0.1);
           border-radius: 4px;
           overflow: hidden;
         }
-        
-        .metric-bar-fill {
+
+        .percentage-bar .fill {
           height: 100%;
+          background: linear-gradient(90deg, #4caf50, #8bc34a);
           border-radius: 4px;
-          transition: width 0.5s ease;
         }
-        
-        .metric-percentage {
-          flex: 0 0 50px;
-          text-align: right;
-          font-weight: 600;
-        }
-        
-        .sensor-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 0.75rem;
-        }
-        
-        .sensor-item {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-          padding: 0.75rem;
-          background: rgba(20, 27, 45, 0.5);
-          border-radius: 8px;
-        }
-        
-        .sensor-name {
-          font-size: 0.8rem;
-          color: #a8b2d1;
-          text-transform: capitalize;
-        }
-        
-        .sensor-value {
-          font-size: 1rem;
-          font-weight: 600;
-        }
-        
-        .sensor-value.anomaly {
-          color: #f44336;
-        }
-        
-        /* Communications Styles */
-        .communications-container {
-          display: flex;
-          flex-direction: column;
-          gap: 2rem;
-        }
-        
-        .comm-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        
-        .comm-header h1 {
-          font-size: 2rem;
-          font-weight: 600;
-        }
-        
-        .comm-stats {
-          display: flex;
-          gap: 1.5rem;
-          font-size: 0.9rem;
-          color: #a8b2d1;
-        }
-        
-        .critical-count {
-          color: #f44336;
-          font-weight: 600;
-        }
-        
-        .comm-list {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          max-height: 70vh;
-          overflow-y: auto;
-        }
-        
-        .comm-item {
-          background: rgba(26, 34, 53, 0.7);
-          border: 1px solid #2a3553;
-          border-radius: 12px;
-          padding: 1.5rem;
-          animation: slideIn 0.3s ease;
-        }
-        
-        .comm-agents {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          font-weight: 600;
-        }
-        
-        .agent-from {
-          color: #00bcd4;
-        }
-        
-        .arrow {
-          color: #a8b2d1;
-        }
-        
-        .agent-to {
-          color: #ff6b35;
-        }
-        
-        .comm-meta {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .severity-badge {
-          padding: 0.25rem 0.75rem;
-          border-radius: 12px;
-          font-size: 0.75rem;
-          color: white;
-          text-transform: uppercase;
-          font-weight: 600;
-        }
-        
-        .timestamp {
-          color: #64748b;
-          font-size: 0.85rem;
-        }
-        
-        .comm-message {
-          margin: 1rem 0;
-          line-height: 1.6;
-        }
-        
-        .comm-action {
-          padding-top: 1rem;
-          border-top: 1px solid #2a3553;
-          color: #a8b2d1;
-        }
-        
-        .empty-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1rem;
-          padding: 4rem;
-          color: #64748b;
-        }
-        
-        /* Analytics Styles */
-        .analytics-container {
-          display: flex;
-          flex-direction: column;
-          gap: 2rem;
-        }
-        
-        .analytics-header h1 {
-          font-size: 2rem;
-          font-weight: 600;
-          margin-bottom: 0.5rem;
-        }
-        
-        .analytics-header p {
-          color: #a8b2d1;
-        }
-        
-        .query-section {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .query-input-wrapper {
-          display: flex;
-          gap: 1rem;
-        }
-        
-        .query-input {
-          flex: 1;
-          padding: 1rem 1.5rem;
-          background: rgba(26, 34, 53, 0.7);
-          border: 1px solid #2a3553;
-          border-radius: 12px;
-          color: #e0e6ed;
-          font-size: 1rem;
-        }
-        
-        .query-input:focus {
-          outline: none;
-          border-color: #00bcd4;
-        }
-        
-        .query-button {
-          padding: 1rem 2rem;
-          background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
-          border: none;
-          border-radius: 12px;
-          color: white;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .query-button:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 5px 15px rgba(0, 188, 212, 0.3);
-        }
-        
-        .query-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        
-        .query-suggestions {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-        
-        .query-suggestions span {
-          color: #64748b;
-          font-size: 0.9rem;
-        }
-        
-        .suggestion-chip {
-          padding: 0.5rem 1rem;
-          background: rgba(0, 188, 212, 0.1);
-          border: 1px solid rgba(0, 188, 212, 0.3);
-          border-radius: 20px;
-          color: #00bcd4;
-          font-size: 0.85rem;
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        
-        .suggestion-chip:hover {
-          background: rgba(0, 188, 212, 0.2);
-          transform: translateY(-2px);
-        }
-        
-        .response-section {
-          background: rgba(26, 34, 53, 0.7);
-          border: 1px solid #2a3553;
-          border-radius: 12px;
-          padding: 1.5rem;
-          animation: fadeIn 0.5s ease;
-        }
-        
-        .response-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1rem;
-          padding-bottom: 1rem;
-          border-bottom: 1px solid #2a3553;
-        }
-        
-        .responding-agent {
+
+        .co2-reduction {
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          color: #00bcd4;
-          font-weight: 600;
-        }
-        
-        .confidence {
+          margin-top: 1rem;
+          padding: 0.75rem;
+          background: rgba(76, 175, 80, 0.1);
+          border: 1px solid rgba(76, 175, 80, 0.3);
+          border-radius: 8px;
           color: #4caf50;
-          font-size: 0.9rem;
-          font-weight: 600;
         }
-        
-        .response-content {
-          line-height: 1.8;
-          white-space: pre-wrap;
+
+        .parameter-item {
+          display: flex;
+          justify-content: space-between;
+          padding: 0.5rem 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
-        
+
+        .enhanced-unit-card {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+        }
+
+        .units-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+          gap: 1.5rem;
+        }
+
+        .unit-metrics {
+          margin-top: 1rem;
+        }
+
+        .health-bar, .efficiency-bar {
+          display: grid;
+          grid-template-columns: 80px 1fr 50px;
+          align-items: center;
+          gap: 1rem;
+          margin: 0.75rem 0;
+        }
+
+        .bar {
+          height: 8px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .bar .fill {
+          height: 100%;
+          background: linear-gradient(90deg, #00bcd4, #0097a7);
+          border-radius: 4px;
+          transition: width 0.5s ease;
+        }
+
         @keyframes pulse {
           0% {
             box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
@@ -1004,26 +842,6 @@ function App() {
           }
           100% {
             box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
-          }
-        }
-        
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateX(-20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
           }
         }
       `}</style>
