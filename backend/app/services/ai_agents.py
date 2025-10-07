@@ -5,7 +5,7 @@ from app.models.agents import AgentState, AgentMessage, AgentAction, Optimizatio
 from app.models.sensors import SensorData, AnomalyAlert
 from app.models.database import AsyncSessionLocal, AgentCommunication, ProcessOptimization
 from app.services.gemini_service import gemini_service
-from app.services.public_data_service import public_data_service
+from app.services.public_data_services import public_data_service
 from app.services.physics_informed_models import process_optimizer, CementChemistryConstraints
 from app.services.alternative_fuel_optimizer import alternative_fuel_optimizer
 from app.config import settings

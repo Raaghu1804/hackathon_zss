@@ -15,7 +15,7 @@ from app.models.sensors import SensorData, UnitStatus, AnomalyAlert
 from app.models.agents import AnalyticsQuery, AnalyticsResponse, AgentState
 from app.services.data_simulator import simulator
 from app.services.ai_agents import agent_orchestrator
-from app.services.public_data_service import public_data_service
+from app.services.public_data_services import public_data_service
 from app.services.physics_informed_models import process_optimizer
 from app.services.alternative_fuel_optimizer import alternative_fuel_optimizer
 from app.services.gemini_service import gemini_service
