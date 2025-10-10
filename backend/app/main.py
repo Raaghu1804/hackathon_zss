@@ -179,17 +179,55 @@ async def broadcast_sensor_data():
                                     'suggestions': analysis['optimization']
                                 })
 
+                    # Convert all Pydantic models to JSON-safe dicts
+                    sensor_data_json = {}
+                    for unit, sensors in units_data.items():
+                        sensor_data_json[unit] = []
+                        for s in sensors:
+                            data = s.dict()
+                            # Convert datetime to ISO string
+                            if 'timestamp' in data and isinstance(data['timestamp'], datetime):
+                                data['timestamp'] = data['timestamp'].isoformat()
+                            sensor_data_json[unit].append(data)
+
+                    anomalies_json = []
+                    if anomalies:
+                        for a in anomalies:
+                            data = a.dict()
+                            # Convert datetime to ISO string
+                            if 'timestamp' in data and isinstance(data['timestamp'], datetime):
+                                data['timestamp'] = data['timestamp'].isoformat()
+                            anomalies_json.append(data)
+
                     # Broadcast to WebSocket clients
-                    await manager.broadcast({
-                        "type": "sensor_update",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "data": {
-    unit: [s.dict() if not hasattr(s, 'model_dump') else s.model_dump(mode='json') for s in sensors]
-    for unit, sensors in units_data.items()
-},
-"anomalies": [a.dict() if not hasattr(a, 'model_dump') else a.model_dump(mode='json') for a in anomalies] if anomalies else [],
-                        "optimizations": optimization_suggestions
-                    })
+                    # Convert all Pydantic models to JSON-safe dicts
+                sensor_data_json = {}
+                for unit, sensors in units_data.items():
+                    sensor_data_json[unit] = []
+                    for s in sensors:
+                        data = s.dict()
+                        # Convert datetime to ISO string
+                        if 'timestamp' in data and isinstance(data['timestamp'], datetime):
+                            data['timestamp'] = data['timestamp'].isoformat()
+                        sensor_data_json[unit].append(data)
+
+                anomalies_json = []
+                if anomalies:
+                    for a in anomalies:
+                        data = a.dict()
+                        # Convert datetime to ISO string
+                        if 'timestamp' in data and isinstance(data['timestamp'], datetime):
+                            data['timestamp'] = data['timestamp'].isoformat()
+                        anomalies_json.append(data)
+
+                # Broadcast to WebSocket clients
+                await manager.broadcast({
+                    "type": "sensor_update",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "data": sensor_data_json,
+                    "anomalies": anomalies_json,
+                    "optimizations": optimization_suggestions
+                })
 
             await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
@@ -511,6 +549,81 @@ async def health_check():
             "simulation": "running"
         }
     }
+
+
+@app.get("/api/units/status")
+async def get_units_status():
+    """Get status of all units"""
+    try:
+        async with AsyncSessionLocal() as session:
+            # Get latest readings for each unit
+            units = ['precalciner', 'rotary_kiln', 'clinker_cooler']
+            status_data = []
+
+            for unit in units:
+                result = await session.execute(
+                    select(SensorReading)
+                    .where(SensorReading.unit == unit)
+                    .order_by(SensorReading.timestamp.desc())
+                    .limit(20)
+                )
+                readings = result.scalars().all()
+
+                if readings:
+                    anomaly_count = sum(1 for r in readings if r.is_anomaly)
+                    overall_health = max(50, 100 - (anomaly_count * 5))
+                    efficiency = 85 if anomaly_count < 2 else 70
+
+                    status_data.append({
+                        'unit': unit,
+                        'status': 'normal' if anomaly_count < 2 else 'warning',
+                        'overall_health': overall_health,
+                        'efficiency': efficiency,
+                        'anomaly_count': anomaly_count
+                    })
+
+            return status_data
+    except Exception as e:
+        print(f"Error in units status: {e}")
+        return []
+
+
+@app.get("/api/public-data/latest")
+async def get_latest_public_data():
+    """Get latest public data"""
+    return {
+        'weather': {
+            'temperature': 28,
+            'humidity': 65,
+            'wind_speed': 12
+        },
+        'timestamp': datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/api/agents/communications")
+async def get_agent_communications(limit: int = 50):
+    """Get agent communications"""
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(AgentCommunication)
+                .order_by(AgentCommunication.timestamp.desc())
+                .limit(limit)
+            )
+            comms = result.scalars().all()
+
+            return [{
+                'from_agent': c.from_agent,
+                'to_agent': c.to_agent,
+                'message': c.message,
+                'severity': c.severity,
+                'action_taken': c.action_taken,
+                'timestamp': c.timestamp.isoformat()
+            } for c in comms]
+    except Exception as e:
+        print(f"Error getting communications: {e}")
+        return []
 
 
 if __name__ == "__main__":

@@ -1,204 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send } from 'lucide-react';
-import * as api from './services/api';
+import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu } from 'lucide-react';
 import './App.css';
 
-// Enhanced Metric Card Component
-const EnhancedMetricCard = ({ title, value, unit, trend, status, source, confidence }) => (
-  <div className="metric-card enhanced">
-    <div className="metric-header">
-      <h3>{title}</h3>
-      <span className={`status-badge ${status}`}>{status}</span>
-    </div>
-    <div className="metric-value">
-      <span className="value">{value}</span>
-      <span className="unit">{unit}</span>
-    </div>
-    <div className="metric-meta">
-      <div className="trend">
-        {trend > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-        <span>{Math.abs(trend)}%</span>
-      </div>
-      <div className="data-source">
-        <Cloud size={12} />
-        <span>{source}</span>
-      </div>
-    </div>
-    <div className="confidence-bar">
-      <div className="confidence-fill" style={{ width: `${confidence * 100}%` }}></div>
-      <span className="confidence-text">Confidence: {(confidence * 100).toFixed(0)}%</span>
-    </div>
-  </div>
-);
+const API_BASE = 'http://localhost:8000/api';
 
-// Public Data Panel Component
-const PublicDataPanel = ({ publicData, loading }) => {
-  if (loading) {
-    return (
-      <div className="public-data-panel">
-        <div className="panel-header">
-          <h2><Cloud size={20} /> Public Data Integration</h2>
-        </div>
-        <div className="loading-spinner">Loading public data...</div>
-      </div>
-    );
-  }
-
-  if (!publicData) return null;
-
-  return (
-    <div className="public-data-panel">
-      <div className="panel-header">
-        <h2><Cloud size={20} /> Public Data Integration</h2>
-        <span className="quality-score">Quality Score: {(publicData.confidence_score * 100).toFixed(0)}%</span>
-      </div>
-      <div className="data-grid">
-        {publicData.weather && (
-          <div className="data-card">
-            <h4>Weather Conditions</h4>
-            <p>Temperature: {publicData.weather.temperature}°C</p>
-            <p>Humidity: {publicData.weather.humidity}%</p>
-            <p>Wind Speed: {publicData.weather.wind_speed} m/s</p>
-          </div>
-        )}
-        {publicData.fuel_prices && (
-          <div className="data-card">
-            <h4>Fuel Prices</h4>
-            <p>Coal: ₹{publicData.fuel_prices.coal}/ton</p>
-            <p>Pet Coke: ₹{publicData.fuel_prices.petcoke}/ton</p>
-          </div>
-        )}
-        {publicData.grid_data && (
-          <div className="data-card">
-            <h4>Grid Information</h4>
-            <p>Current Load: {publicData.grid_data.current_load} MW</p>
-            <p>Tariff: ₹{publicData.grid_data.tariff}/kWh</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Optimization Panel Component
-const OptimizationPanel = ({ onOptimize }) => {
-  const [selectedOptimization, setSelectedOptimization] = useState('comprehensive');
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [results, setResults] = useState(null);
-
-  const optimizationTypes = [
-    { value: 'fuel_mix', label: 'Fuel Mix Optimization' },
-    { value: 'process', label: 'Process Parameters' },
-    { value: 'comprehensive', label: 'Comprehensive Plant' }
-  ];
-
-  const handleOptimize = async () => {
-    setIsOptimizing(true);
-    try {
-      let result;
-      if (selectedOptimization === 'fuel_mix') {
-        result = await api.optimizeFuelMix();
-      } else if (selectedOptimization === 'process') {
-        result = await api.optimizeWithPublicData();
-      } else {
-        result = await api.comprehensiveOptimization();
-      }
-      setResults(result);
-      if (onOptimize) onOptimize(result);
-    } catch (error) {
-      console.error('Optimization error:', error);
-    }
-    setIsOptimizing(false);
-  };
-
-  return (
-    <div className="optimization-panel">
-      <div className="panel-header">
-        <h2>🔥 AI Optimization Engine</h2>
-        <select
-          value={selectedOptimization}
-          onChange={(e) => setSelectedOptimization(e.target.value)}
-          className="optimization-select"
-        >
-          {optimizationTypes.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-
-      <button
-        className={`optimize-button ${isOptimizing ? 'optimizing' : ''}`}
-        onClick={handleOptimize}
-        disabled={isOptimizing}
-      >
-        {isOptimizing ? 'Optimizing...' : 'Run Optimization'}
-      </button>
-
-      {results && (
-        <div className="optimization-results">
-          {results.optimal_mix && (
-            <div className="fuel-mix-results">
-              <h4>Optimal Fuel Mix</h4>
-              {Object.entries(results.optimal_mix).map(([fuel, percentage]) => (
-                <div key={fuel} className="fuel-bar">
-                  <span>{fuel.replace('_', ' ')}</span>
-                  <div className="percentage-bar">
-                    <div className="fill" style={{ width: `${percentage}%` }}></div>
-                  </div>
-                  <span>{percentage}%</span>
-                </div>
-              ))}
-              {results.co2_reduction && (
-                <div className="co2-reduction">
-                  <Leaf size={16} />
-                  CO₂ Reduction: {results.co2_reduction.reduction_percentage}%
-                </div>
-              )}
-            </div>
-          )}
-
-          {results.optimal_parameters && (
-            <div className="process-results">
-              <h4>Optimal Parameters</h4>
-              {Object.entries(results.optimal_parameters).map(([param, value]) => (
-                <div key={param} className="parameter-item">
-                  <span>{param.replace('_', ' ')}</span>
-                  <span className="value">{typeof value === 'number' ? value.toFixed(2) : value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {results.confidence && (
-            <div className="optimization-confidence">
-              Confidence: {(results.confidence * 100).toFixed(0)}%
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Main App Component
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [unitsStatus, setUnitsStatus] = useState([]);
-  const [publicData, setPublicData] = useState(null);
-  const [communications, setCommunications] = useState([]);
-  const [analyticsQuery, setAnalyticsQuery] = useState('');
-  const [analyticsResponse, setAnalyticsResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
-  const [latestOptimization, setLatestOptimization] = useState(null);
+  const [sensorData, setSensorData] = useState({});
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load initial data
-    loadUnitsStatus();
-    loadPublicData();
-    loadCommunications();
-
-    // Setup WebSocket connection
+    // Setup WebSocket
     const ws = new WebSocket('ws://localhost:8000/ws');
 
     ws.onopen = () => {
@@ -208,311 +21,303 @@ function App() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.type === 'sensor_update') {
-        loadUnitsStatus();
-      } else if (data.type === 'optimization_update') {
-        setLatestOptimization(data.optimization);
+      if (data.type === 'sensor_update' && data.data) {
+        setSensorData(data.data);
+        setLoading(false);
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setWsConnected(false);
-    };
+    ws.onerror = () => setWsConnected(false);
+    ws.onclose = () => setWsConnected(false);
 
-    ws.onclose = () => {
-      setWsConnected(false);
-      console.log('WebSocket disconnected');
-    };
+    return () => ws.close();
+  }, []);
 
-    // Periodic refresh
-    const interval = setInterval(() => {
-      if (activeTab === 'dashboard') {
-        loadUnitsStatus();
-        loadPublicData();
-      }
-      if (activeTab === 'communications') loadCommunications();
-    }, 10000);
-
-    return () => {
-      ws.close();
-      clearInterval(interval);
-    };
-  }, [activeTab]);
-
-  const loadUnitsStatus = async () => {
-    try {
-      const data = await api.getUnitsStatus();
-      setUnitsStatus(data);
-    } catch (error) {
-      console.error('Error loading units status:', error);
-    }
-  };
-
-  const loadPublicData = async () => {
-    try {
-      const data = await api.getPublicData();
-      setPublicData(data);
-    } catch (error) {
-      console.error('Error loading public data:', error);
-    }
-  };
-
-  const loadCommunications = async () => {
-    try {
-      const data = await api.getAgentCommunications();
-      setCommunications(data);
-    } catch (error) {
-      console.error('Error loading communications:', error);
-    }
-  };
-
-  const handleAnalyticsQuery = async () => {
-    if (!analyticsQuery.trim()) return;
-
-    setLoading(true);
-    try {
-      const response = await api.queryAnalytics(analyticsQuery);
-      setAnalyticsResponse(response);
-    } catch (error) {
-      console.error('Error querying analytics:', error);
-    }
-    setLoading(false);
-  };
-
-  const renderEnhancedDashboard = () => (
-    <div className="enhanced-dashboard">
-      <div className="dashboard-header">
-        <h1>AI-Driven Cement Plant Optimization</h1>
-        <div className="header-status">
-          <span className={`connection-status ${wsConnected ? 'connected' : 'disconnected'}`}>
-            <span className="status-dot"></span>
-            {wsConnected ? 'Real-time Connected' : 'Connecting...'}
-          </span>
-          <span className={`connection-status ${publicData ? 'connected' : 'disconnected'}`}>
-            <Cloud size={16} />
-            {publicData ? 'Public Data: Active' : 'Loading public data...'}
-          </span>
+  const MetricCard = ({ title, value, unit, trend, status, icon: Icon, color }) => (
+    <div className={`metric-card ${status}`} style={{ borderLeft: `4px solid ${color}` }}>
+      <div className="metric-header">
+        <div className="metric-title">
+          <Icon size={20} color={color} />
+          <h3>{title}</h3>
         </div>
+        <span className={`status-badge ${status}`}>{status}</span>
       </div>
-
-      <div className="overview-section">
-        <EnhancedMetricCard
-          title="Plant Efficiency"
-          value="87.5"
-          unit="%"
-          trend={2.3}
-          status="normal"
-          source="Satellite"
-          confidence={0.92}
-        />
-        <EnhancedMetricCard
-          title="Energy Consumption"
-          value="142.8"
-          unit="MW"
-          trend={-1.2}
-          status="normal"
-          source="Grid Data"
-          confidence={0.95}
-        />
-        <EnhancedMetricCard
-          title="CO₂ Emissions"
-          value="825"
-          unit="kg/t"
-          trend={-3.5}
-          status="warning"
-          source="CPCB"
-          confidence={0.88}
-        />
-        <EnhancedMetricCard
-          title="Alternative Fuel"
-          value="35"
-          unit="%"
-          trend={5.2}
-          status="normal"
-          source="Calculated"
-          confidence={0.91}
-        />
+      <div className="metric-value">
+        <span className="value">{value}</span>
+        <span className="unit">{unit}</span>
       </div>
-
-      <PublicDataPanel publicData={publicData} loading={!publicData} />
-
-      <OptimizationPanel onOptimize={setLatestOptimization} />
-
-      {latestOptimization && (
-        <div className="latest-optimization-alert">
-          <AlertCircle size={20} />
-          <span>New optimization available with {(latestOptimization.confidence * 100).toFixed(0)}% confidence</span>
-        </div>
-      )}
-
-      <div className="units-grid">
-        {unitsStatus.map((unit, idx) => (
-          <div key={idx} className="enhanced-unit-card">
-            <div className="unit-header">
-              <h3>{unit.unit.replace('_', ' ').toUpperCase()}</h3>
-              <span className={`status-${unit.status}`}>{unit.status}</span>
-            </div>
-            <div className="unit-metrics">
-              <div className="health-bar">
-                <span>Health</span>
-                <div className="bar">
-                  <div className="fill" style={{ width: `${unit.overall_health}%` }}></div>
-                </div>
-                <span>{unit.overall_health}%</span>
-              </div>
-              <div className="efficiency-bar">
-                <span>Efficiency</span>
-                <div className="bar">
-                  <div className="fill" style={{ width: `${unit.efficiency}%` }}></div>
-                </div>
-                <span>{unit.efficiency}%</span>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="metric-trend">
+        {trend > 0 ? <TrendingUp size={16} color="#4caf50" /> : <TrendingDown size={16} color="#f44336" />}
+        <span style={{ color: trend > 0 ? '#4caf50' : '#f44336' }}>
+          {Math.abs(trend)}% from last hour
+        </span>
       </div>
     </div>
   );
 
-  const renderCommunications = () => (
-    <div className="communications-page">
-      <div className="page-header">
-        <h1>Agent Communications</h1>
-        <p>Real-time communication between AI agents monitoring plant operations</p>
-      </div>
+  const UnitCard = ({ unit, data }) => {
+    const unitNames = {
+      'precalciner': 'Pre-Calciner',
+      'rotary_kiln': 'Rotary Kiln',
+      'clinker_cooler': 'Clinker Cooler'
+    };
 
-      <div className="communications-stats">
-        <div className="stat-card">
-          <h3>Total Communications</h3>
-          <span className="stat-value">{communications.length}</span>
-        </div>
-        <div className="stat-card">
-          <h3>Critical Alerts</h3>
-          <span className="stat-value critical">
-            {communications.filter(c => c.severity === 'critical').length}
-          </span>
-        </div>
-        <div className="stat-card">
-          <h3>Warnings</h3>
-          <span className="stat-value warning">
-            {communications.filter(c => c.severity === 'warning').length}
-          </span>
-        </div>
-      </div>
+    const getUnitHealth = (sensors) => {
+      if (!sensors || sensors.length === 0) return 85;
+      const anomalyCount = sensors.filter(s => s.is_anomaly).length;
+      return Math.max(50, 100 - (anomalyCount * 10));
+    };
 
-      <div className="communications-list">
-        {communications.length === 0 ? (
-          <div className="empty-state">
-            <MessageSquare size={48} />
-            <p>No communications yet. AI agents will communicate when anomalies are detected.</p>
+    const health = getUnitHealth(data);
+
+    return (
+      <div className="unit-card">
+        <div className="unit-header">
+          <div className="unit-title">
+            <Cpu size={24} color="#00bcd4" />
+            <h3>{unitNames[unit] || unit}</h3>
           </div>
-        ) : (
-          communications.map((comm, idx) => (
-            <div key={idx} className={`communication-card severity-${comm.severity}`}>
-              <div className="comm-header">
-                <div className="comm-agents">
-                  <span className="agent-badge">{comm.from_agent}</span>
-                  <span className="arrow">→</span>
-                  <span className="agent-badge">{comm.to_agent}</span>
-                </div>
-                <span className={`severity-badge ${comm.severity}`}>
-                  {comm.severity}
-                </span>
-              </div>
-              <div className="comm-content">
-                <p className="message">{comm.message}</p>
-                {comm.action_taken && (
-                  <div className="action-taken">
-                    <strong>Action Taken:</strong> {comm.action_taken}
-                  </div>
-                )}
-              </div>
-              <div className="comm-footer">
-                <span className="timestamp">
-                  {new Date(comm.timestamp).toLocaleString()}
-                </span>
+          <div className={`health-indicator ${health > 80 ? 'good' : health > 60 ? 'warning' : 'critical'}`}>
+            <div className="health-value">{health}%</div>
+            <div className="health-label">Health</div>
+          </div>
+        </div>
+
+        <div className="sensors-grid">
+          {data && data.slice(0, 6).map((sensor, idx) => (
+            <div key={idx} className={`sensor-item ${sensor.is_anomaly ? 'anomaly' : ''}`}>
+              <div className="sensor-name">{sensor.sensor_name.replace(/_/g, ' ')}</div>
+              <div className="sensor-value">
+                {sensor.value.toFixed(2)} <span className="sensor-unit">{sensor.unit_measure}</span>
               </div>
             </div>
-          ))
+          ))}
+        </div>
+
+        {data && data.filter(s => s.is_anomaly).length > 0 && (
+          <div className="unit-alerts">
+            <AlertCircle size={16} color="#ff9800" />
+            <span>{data.filter(s => s.is_anomaly).length} anomalies detected</span>
+          </div>
         )}
       </div>
-    </div>
-  );
+    );
+  };
 
-  const renderAnalytics = () => (
-    <div className="analytics-page">
-      <div className="page-header">
-        <h1>AI Analytics</h1>
-        <p>Ask questions about your plant operations in natural language</p>
-      </div>
-
-      <div className="query-section">
-        <div className="query-input-group">
-          <input
-            type="text"
-            className="query-input"
-            placeholder="Ask a question about plant operations..."
-            value={analyticsQuery}
-            onChange={(e) => setAnalyticsQuery(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAnalyticsQuery()}
-          />
-          <button
-            className="query-button"
-            onClick={handleAnalyticsQuery}
-            disabled={loading || !analyticsQuery.trim()}
-          >
-            <Send size={20} />
-            {loading ? 'Processing...' : 'Ask'}
-          </button>
+  const Dashboard = () => (
+    <div className="dashboard">
+      <div className="dashboard-hero">
+        <div className="hero-content">
+          <h1>AI-Driven Cement Plant Optimization</h1>
+          <p>Real-time monitoring and intelligent optimization powered by advanced AI</p>
         </div>
-
-        <div className="example-queries">
-          <p>Example queries:</p>
-          <button onClick={() => setAnalyticsQuery("What is the current efficiency of the pre-calciner?")}>
-            Current pre-calciner efficiency
-          </button>
-          <button onClick={() => setAnalyticsQuery("How can we optimize the rotary kiln temperature?")}>
-            Optimize kiln temperature
-          </button>
-          <button onClick={() => setAnalyticsQuery("What are the main issues in the clinker cooler?")}>
-            Clinker cooler issues
-          </button>
-        </div>
-      </div>
-
-      {analyticsResponse && (
-        <div className="analytics-response">
-          <div className="response-header">
-            <h3>AI Response</h3>
-            <span className="confidence-badge">
-              Confidence: {(analyticsResponse.confidence * 100).toFixed(0)}%
-            </span>
-          </div>
-          <div className="response-content">
-            <p>{analyticsResponse.answer}</p>
-          </div>
-          {analyticsResponse.sources && analyticsResponse.sources.length > 0 && (
-            <div className="response-sources">
-              <h4>Sources:</h4>
-              <ul>
-                {analyticsResponse.sources.map((source, idx) => (
-                  <li key={idx}>{source}</li>
-                ))}
-              </ul>
+        <div className="hero-stats">
+          <div className="hero-stat">
+            <Zap size={24} color="#00bcd4" />
+            <div>
+              <div className="stat-value">87.5%</div>
+              <div className="stat-label">Plant Efficiency</div>
             </div>
-          )}
+          </div>
+          <div className="hero-stat">
+            <Database size={24} color="#4caf50" />
+            <div>
+              <div className="stat-value">{Object.keys(sensorData).length}</div>
+              <div className="stat-label">Active Units</div>
+            </div>
+          </div>
+          <div className="hero-stat">
+            <Activity size={24} color="#ff9800" />
+            <div>
+              <div className="stat-value">
+                {wsConnected ? 'Live' : 'Offline'}
+              </div>
+              <div className="stat-label">Status</div>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="metrics-section">
+        <h2 className="section-title">Key Performance Indicators</h2>
+        <div className="metrics-grid">
+          <MetricCard
+            title="Plant Efficiency"
+            value="87.5"
+            unit="%"
+            trend={2.3}
+            status="normal"
+            icon={Zap}
+            color="#00bcd4"
+          />
+          <MetricCard
+            title="Energy Consumption"
+            value="142.8"
+            unit="MW"
+            trend={-1.2}
+            status="normal"
+            icon={Activity}
+            color="#4caf50"
+          />
+          <MetricCard
+            title="CO₂ Emissions"
+            value="825"
+            unit="kg/t"
+            trend={-3.5}
+            status="warning"
+            icon={Cloud}
+            color="#ff9800"
+          />
+          <MetricCard
+            title="Alternative Fuel"
+            value="35"
+            unit="%"
+            trend={5.2}
+            status="normal"
+            icon={Leaf}
+            color="#8bc34a"
+          />
+        </div>
+      </div>
+
+      <div className="units-section">
+        <h2 className="section-title">Production Units</h2>
+        {loading ? (
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Loading sensor data...</p>
+          </div>
+        ) : (
+          <div className="units-grid">
+            {Object.entries(sensorData).map(([unit, data]) => (
+              <UnitCard key={unit} unit={unit} data={data} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="optimization-section">
+        <div className="optimization-card">
+          <div className="optimization-header">
+            <div>
+              <h3>🔥 AI Optimization Engine</h3>
+              <p>Intelligent recommendations for optimal plant performance</p>
+            </div>
+            <button className="optimize-button">
+              Run Optimization
+            </button>
+          </div>
+          <div className="optimization-insights">
+            <div className="insight-item">
+              <div className="insight-icon" style={{ background: 'rgba(0, 188, 212, 0.2)' }}>
+                <TrendingUp size={20} color="#00bcd4" />
+              </div>
+              <div className="insight-content">
+                <div className="insight-title">Energy Efficiency</div>
+                <div className="insight-value">Potential 8% improvement</div>
+              </div>
+            </div>
+            <div className="insight-item">
+              <div className="insight-icon" style={{ background: 'rgba(76, 175, 80, 0.2)' }}>
+                <Leaf size={20} color="#4caf50" />
+              </div>
+              <div className="insight-content">
+                <div className="insight-title">Alternative Fuels</div>
+                <div className="insight-value">Increase to 45% possible</div>
+              </div>
+            </div>
+            <div className="insight-item">
+              <div className="insight-icon" style={{ background: 'rgba(255, 152, 0, 0.2)' }}>
+                <AlertCircle size={20} color="#ff9800" />
+              </div>
+              <div className="insight-content">
+                <div className="insight-title">Process Optimization</div>
+                <div className="insight-value">3 adjustments recommended</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
+
+  const Communications = () => (
+    <div className="communications">
+      <div className="page-header">
+        <h1>Agent Communications</h1>
+        <p>Real-time coordination between AI agents</p>
+      </div>
+      <div className="empty-state">
+        <MessageSquare size={64} color="#64748b" />
+        <h3>No Communications Yet</h3>
+        <p>AI agents will communicate here when anomalies are detected</p>
+      </div>
+    </div>
+  );
+
+  const Analytics = () => {
+    const [query, setQuery] = useState('');
+
+    const exampleQueries = [
+      "What is the current efficiency of the pre-calciner?",
+      "How can we optimize the rotary kiln temperature?",
+      "What are the main issues in the clinker cooler?",
+      "Suggest alternative fuel optimization strategies"
+    ];
+
+    return (
+      <div className="analytics">
+        <div className="page-header">
+          <h1>AI Analytics</h1>
+          <p>Ask questions about your plant operations in natural language</p>
+        </div>
+
+        <div className="query-card">
+          <div className="query-input-group">
+            <input
+              type="text"
+              className="query-input"
+              placeholder="Ask a question about plant operations..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button className="query-button">
+              <Send size={20} />
+              Ask
+            </button>
+          </div>
+
+          <div className="example-queries">
+            <p>Example questions:</p>
+            <div className="query-chips">
+              {exampleQueries.map((q, idx) => (
+                <button key={idx} className="query-chip" onClick={() => setQuery(q)}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="app">
       <nav className="navbar">
         <div className="nav-brand">
-          <Gauge size={28} />
-          <span>Cement AI Optimizer 2.0</span>
+          <Gauge size={32} />
+          <div>
+            <div className="brand-title">Cement AI Optimizer</div>
+            <div className="brand-subtitle">Version 2.0</div>
+          </div>
+        </div>
+
+        <div className="nav-center">
+          <div className={`connection-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
+            <div className="indicator-dot"></div>
+            <span>{wsConnected ? 'Real-time Connected' : 'Connecting...'}</span>
+          </div>
         </div>
 
         <div className="nav-tabs">
@@ -521,29 +326,29 @@ function App() {
             onClick={() => setActiveTab('dashboard')}
           >
             <Activity size={20} />
-            Dashboard
+            <span>Dashboard</span>
           </button>
           <button
             className={`nav-tab ${activeTab === 'communications' ? 'active' : ''}`}
             onClick={() => setActiveTab('communications')}
           >
             <MessageSquare size={20} />
-            Communications
+            <span>Communications</span>
           </button>
           <button
             className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
             <BarChart3 size={20} />
-            AI Analytics
+            <span>AI Analytics</span>
           </button>
         </div>
       </nav>
 
       <main className="main-content">
-        {activeTab === 'dashboard' && renderEnhancedDashboard()}
-        {activeTab === 'communications' && renderCommunications()}
-        {activeTab === 'analytics' && renderAnalytics()}
+        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'communications' && <Communications />}
+        {activeTab === 'analytics' && <Analytics />}
       </main>
     </div>
   );
