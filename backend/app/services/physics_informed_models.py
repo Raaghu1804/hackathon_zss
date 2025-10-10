@@ -1,12 +1,11 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any  # FIXED: Added Any import
 import pandas as pd
 from scipy.optimize import minimize
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel
-from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -278,78 +277,55 @@ class ProcessOptimizer:
         energy_eff = self._calculate_energy_efficiency(
             params['kiln_temperature'],
             params['fuel_rate'],
-            public_data.get('weather', {}).get('temperature', 25)
-        )
-
-        # Production rate component
-        production = self._calculate_production_rate(
-            params['kiln_temperature'],
-            params['air_flow'],
-            params['residence_time'],
-            params['feed_rate']
+            params['air_flow']
         )
 
         # Quality component
-        quality = self._calculate_quality_index(
+        quality_score = self._calculate_quality_score(
             params['kiln_temperature'],
             params['residence_time'],
             params['kiln_speed']
         )
 
-        # Environmental component (CO2 reduction)
-        environmental = self._calculate_environmental_score(
+        # Environmental component (using public data)
+        env_score = self._calculate_environmental_score(
             params['fuel_rate'],
             public_data.get('alternative_fuels', {})
         )
 
-        # Weighted combination
-        weights = {
-            'energy': 0.3,
-            'production': 0.3,
-            'quality': 0.25,
-            'environmental': 0.15
-        }
+        # Weather adjustment
+        weather_penalty = 0
+        if 'weather' in public_data:
+            temp_deviation = abs(public_data['weather'].get('temperature', 25) - 25)
+            weather_penalty = temp_deviation * 0.001
 
-        objective = (
-                weights['energy'] * energy_eff +
-                weights['production'] * production +
-                weights['quality'] * quality +
-                weights['environmental'] * environmental
-        )
+        # Combined objective (maximize)
+        return 0.4 * energy_eff + 0.35 * quality_score + 0.25 * env_score - weather_penalty
 
-        return objective
-
-    def _calculate_energy_efficiency(self, temp: float, fuel_rate: float,
-                                     ambient_temp: float) -> float:
+    def _calculate_energy_efficiency(self, temp: float, fuel: float, air: float) -> float:
         """Calculate energy efficiency score"""
-        optimal_temp = 1425
-        temp_penalty = abs(temp - optimal_temp) / optimal_temp
+        # Optimal temperature around 1450°C
+        temp_efficiency = 1 - abs(temp - 1450) / 150
 
-        # Adjust for ambient temperature
-        ambient_factor = 1 + (ambient_temp - 25) / 100
+        # Fuel efficiency (lower is better, normalized)
+        fuel_efficiency = 1 - (fuel - 8) / 7
 
-        fuel_efficiency = 100 / (fuel_rate * ambient_factor)
+        # Air-fuel ratio optimization
+        air_fuel_ratio = air / fuel
+        optimal_ratio = 10
+        ratio_efficiency = 1 - abs(air_fuel_ratio - optimal_ratio) / optimal_ratio
 
-        return fuel_efficiency * (1 - temp_penalty)
+        return (temp_efficiency + fuel_efficiency + ratio_efficiency) / 3
 
-    def _calculate_production_rate(self, temp: float, air_flow: float,
-                                   residence_time: float, feed_rate: float) -> float:
-        """Calculate normalized production rate"""
-        base_rate = 150
-
-        temp_factor = min(1.0, (temp - 1350) / (1450 - 1350))
-        air_factor = min(1.0, air_flow / 100)
-        time_factor = max(0.8, (35 - residence_time) / 10)
-        feed_factor = feed_rate / 300
-
-        return base_rate * temp_factor * air_factor * time_factor * feed_factor / 150
-
-    def _calculate_quality_index(self, temp: float, residence_time: float,
-                                 kiln_speed: float) -> float:
-        """Calculate quality index based on process parameters"""
-        # Optimal conditions for quality
+    def _calculate_quality_score(self, temp: float, residence_time: float, kiln_speed: float) -> float:
+        """Calculate clinker quality score"""
+        # Temperature quality (optimal around 1450°C)
         temp_quality = 1 - abs(temp - 1450) / 100
+
+        # Residence time quality (optimal around 30 minutes)
         time_quality = 1 - abs(residence_time - 30) / 10
+
+        # Kiln speed quality (optimal around 4 rpm)
         speed_quality = 1 - abs(kiln_speed - 4) / 2
 
         return (temp_quality + time_quality + speed_quality) / 3

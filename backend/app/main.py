@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import numpy as np
 
 from app.config import settings
-from app.models.database import Base, engine, get_db, SensorReading, AgentCommunication, ProcessOptimization
+from app.models.database import Base, engine, get_db, SensorReading, AgentCommunication, ProcessOptimization, AsyncSessionLocal  # ✅ Added AsyncSessionLocal
 from app.models.sensors import SensorData, UnitStatus, AnomalyAlert
 from app.models.agents import AnalyticsQuery, AnalyticsResponse, AgentState
 from app.services.data_simulator import simulator
@@ -184,10 +184,10 @@ async def broadcast_sensor_data():
                         "type": "sensor_update",
                         "timestamp": datetime.utcnow().isoformat(),
                         "data": {
-                            unit: [s.dict() for s in sensors]
-                            for unit, sensors in units_data.items()
-                        },
-                        "anomalies": [a.dict() for a in anomalies] if anomalies else [],
+    unit: [s.dict() if not hasattr(s, 'model_dump') else s.model_dump(mode='json') for s in sensors]
+    for unit, sensors in units_data.items()
+},
+"anomalies": [a.dict() if not hasattr(a, 'model_dump') else a.model_dump(mode='json') for a in anomalies] if anomalies else [],
                         "optimizations": optimization_suggestions
                     })
 
