@@ -1,10 +1,34 @@
 import google.generativeai as genai
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 from app.config import settings
 import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects"""
+
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def sanitize_for_json(data: Any) -> Any:
+    """Recursively convert datetime objects to strings"""
+    if isinstance(data, datetime):
+        return data.isoformat()
+    elif isinstance(data, dict):
+        return {key: sanitize_for_json(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_for_json(item) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(sanitize_for_json(item) for item in data)
+    else:
+        return data
 
 
 class EnhancedGeminiService:
@@ -19,19 +43,22 @@ class EnhancedGeminiService:
     async def analyze_with_context(self, unit: str, combined_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze data with environmental and operational context"""
 
+        # Sanitize data to remove datetime objects
+        sanitized_data = sanitize_for_json(combined_data)
+
         prompt = f"""
         You are an expert AI agent managing the {unit} in a cement plant with access to real-time sensor data and environmental context.
 
         CURRENT OPERATIONAL DATA:
-        Sensor Readings: {json.dumps(combined_data.get('sensor_readings', {}), indent=2)}
+        Sensor Readings: {json.dumps(sanitized_data.get('sensor_readings', {}), indent=2)}
 
         ENVIRONMENTAL CONTEXT:
-        Weather Conditions: {json.dumps(combined_data.get('environmental_conditions', {}), indent=2)}
-        Air Quality: {json.dumps(combined_data.get('air_quality', {}), indent=2)}
-        Thermal Signature: {json.dumps(combined_data.get('thermal_signature', {}), indent=2)}
+        Weather Conditions: {json.dumps(sanitized_data.get('environmental_conditions', {}), indent=2)}
+        Air Quality: {json.dumps(sanitized_data.get('air_quality', {}), indent=2)}
+        Thermal Signature: {json.dumps(sanitized_data.get('thermal_signature', {}), indent=2)}
 
         FUEL AVAILABILITY:
-        {json.dumps(combined_data.get('fuel_availability', {}), indent=2)}
+        {json.dumps(sanitized_data.get('fuel_availability', {}), indent=2)}
 
         Analyze this data considering:
         1. Current operational efficiency and any anomalies
@@ -70,7 +97,7 @@ class EnhancedGeminiService:
             self.context_window.append({
                 'unit': unit,
                 'analysis': analysis,
-                'timestamp': combined_data.get('timestamp')
+                'timestamp': datetime.utcnow().isoformat()
             })
 
             # Maintain context window size
@@ -91,11 +118,124 @@ class EnhancedGeminiService:
                 "confidence_level": 0
             }
 
+    async def answer_analytics_query(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Answer analytics queries with full context and better formatting"""
+
+        # Sanitize context to remove datetime objects
+        if context:
+            context = sanitize_for_json(context)
+
+        # Build historical context summary
+        historical_context = ""
+        if self.context_window:
+            recent_analyses = self.context_window[-3:]
+            historical_context = "RECENT SYSTEM STATE:\n"
+            for ctx in recent_analyses:
+                historical_context += f"- {ctx['unit']}: {ctx['analysis'].get('status', 'unknown')} status\n"
+
+        # Create simplified context string
+        context_str = "No specific context available"
+        if context:
+            try:
+                context_parts = []
+                if context.get('agent'):
+                    context_parts.append(f"Agent: {context['agent']}")
+                if context.get('unit'):
+                    context_parts.append(f"Unit: {context['unit']}")
+                if context.get('public_data_available'):
+                    context_parts.append("Public data: Available")
+                if context.get('confidence_score'):
+                    context_parts.append(f"Confidence: {context['confidence_score']}")
+
+                context_str = "\n".join(context_parts)
+            except Exception as e:
+                logger.warning(f"Error formatting context: {e}")
+                context_str = "Context available but formatting failed"
+
+        # IMPROVED PROMPT FOR BETTER FORMATTING
+        prompt = f"""
+    You are an expert cement plant operations AI assistant. Provide clear, well-structured responses.
+
+    {historical_context}
+
+    CURRENT CONTEXT:
+    {context_str}
+
+    USER QUERY: {query}
+
+    INSTRUCTIONS FOR YOUR RESPONSE:
+    1. Keep your response clear and well-organized
+    2. Use numbered sections (1., 2., 3., etc.) for multiple points
+    3. Keep each section concise (2-3 sentences maximum)
+    4. Use simple formatting - avoid excessive asterisks
+    5. Focus on actionable insights
+    6. Provide specific numbers and parameters when relevant
+
+    FORMAT YOUR RESPONSE LIKE THIS:
+
+    **Summary:**
+    [Brief 1-2 sentence answer to the question]
+
+    **Key Points:**
+    1. [First important point with specific data]
+    2. [Second important point with recommendations]
+    3. [Third point if needed]
+
+    **Recommendations:**
+    - [Specific actionable step 1]
+    - [Specific actionable step 2]
+
+    **Expected Benefits:**
+    [Brief statement of expected improvements]
+
+    Now answer the query above following this format. Keep it professional but concise.
+    """
+
+        try:
+            response = self.model.generate_content(prompt)
+
+            # Calculate confidence
+            confidence = 0.5
+            if context:
+                if context.get('public_data_available'):
+                    confidence += 0.2
+                if context.get('confidence_score', 0) > 0.7:
+                    confidence += 0.2
+                if self.context_window:
+                    confidence += 0.1
+
+            return {
+                "answer": response.text.strip(),
+                "confidence": min(confidence, 0.95),
+                "sources": ["Gemini AI Model", "Cement Industry Best Practices",
+                            "Real-time Public Data"] if context and context.get('public_data_available') else [
+                    "Gemini AI Model",
+                    "Cement Industry Best Practices"],
+                "context_used": bool(context),
+                "historical_context_available": len(self.context_window) > 0
+            }
+
+        except Exception as e:
+            logger.error(f"Error answering query: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "answer": f"I encountered an error processing your query. Please try rephrasing or provide more context.",
+                "confidence": 0.0,
+                "sources": [],
+                "error": str(e)
+            }
+
     async def generate_optimization_plan(self,
                                          current_state: Dict[str, Any],
                                          target_metrics: Dict[str, Any],
                                          constraints: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive optimization plan"""
+
+        # Sanitize all inputs
+        current_state = sanitize_for_json(current_state)
+        target_metrics = sanitize_for_json(target_metrics)
+        constraints = sanitize_for_json(constraints)
 
         prompt = f"""
         As a cement plant optimization expert, create a detailed optimization plan.
@@ -144,202 +284,6 @@ class EnhancedGeminiService:
             logger.error(f"Error generating optimization plan: {e}")
             return {"error": str(e)}
 
-    async def analyze_chemistry_balance(self, raw_meal_composition: Dict[str, float],
-                                        target_clinker: Dict[str, float]) -> Dict[str, Any]:
-        """Analyze and optimize cement chemistry balance"""
 
-        prompt = f"""
-        As a cement chemistry expert, analyze the raw meal composition and suggest optimizations.
-
-        RAW MEAL COMPOSITION:
-        {json.dumps(raw_meal_composition, indent=2)}
-
-        TARGET CLINKER PROPERTIES:
-        {json.dumps(target_clinker, indent=2)}
-
-        Calculate and validate:
-        1. Lime Saturation Factor (LSF) - target 0.92-0.98
-        2. Silica Modulus (SM) - target 2.3-2.7
-        3. Alumina Modulus (AM) - target 1.0-2.5
-        4. Expected clinker phases (C3S, C2S, C3A, C4AF)
-        5. Burnability index
-
-        Provide recommendations for:
-        - Raw material proportion adjustments
-        - Process parameter optimization for quality
-        - Expected strength development
-        - Potential quality issues and solutions
-
-        Format response as JSON.
-        """
-
-        try:
-            response = self.model.generate_content(prompt)
-            result_text = response.text.strip()
-
-            if result_text.startswith('```json'):
-                result_text = result_text[7:]
-            if result_text.endswith('```'):
-                result_text = result_text[:-3]
-
-            return json.loads(result_text.strip())
-
-        except Exception as e:
-            logger.error(f"Error in chemistry analysis: {e}")
-            return {"error": str(e)}
-
-    async def generate_shift_report(self, shift_data: Dict[str, Any]) -> str:
-        """Generate comprehensive shift report"""
-
-        prompt = f"""
-        Generate a professional shift report for cement plant operations.
-
-        SHIFT DATA:
-        {json.dumps(shift_data, indent=2)}
-
-        Include:
-        1. Executive Summary (3-4 sentences)
-        2. Production Metrics
-        3. Energy Consumption Analysis
-        4. Quality Parameters
-        5. Equipment Performance
-        6. Anomalies and Actions Taken
-        7. Environmental Compliance
-        8. Recommendations for Next Shift
-
-        Format as a structured report with clear sections and bullet points where appropriate.
-        Use technical terminology appropriately and be concise but comprehensive.
-        """
-
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            logger.error(f"Error generating shift report: {e}")
-            return f"Error generating report: {str(e)}"
-
-    async def answer_analytics_query(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Enhanced query answering with public data context"""
-
-        # Build context from conversation history
-        historical_context = ""
-        if self.context_window:
-            recent_analyses = self.context_window[-3:]  # Last 3 analyses
-            historical_context = f"""
-            RECENT OPERATIONAL CONTEXT:
-            {json.dumps(recent_analyses, indent=2)}
-            """
-
-        prompt = f"""
-        You are an expert cement plant AI assistant with access to real-time operational data and public environmental data.
-
-        {historical_context}
-
-        CURRENT CONTEXT:
-        {json.dumps(context, indent=2) if context else "No specific context available"}
-
-        USER QUERY: {query}
-
-        Provide a comprehensive answer that:
-        1. Directly addresses the question with specific data and recommendations
-        2. Considers environmental factors and available resources
-        3. References relevant industry best practices and standards
-        4. Includes quantified expected benefits where applicable
-        5. Suggests monitoring metrics and success criteria
-
-        If discussing optimization:
-        - Provide specific parameter ranges and setpoints
-        - Calculate expected energy savings or efficiency gains
-        - Consider alternative fuel opportunities based on availability
-
-        If discussing troubleshooting:
-        - List potential root causes in order of probability
-        - Provide step-by-step diagnostic approach
-        - Suggest immediate and long-term corrective actions
-
-        Be technical but clear, and always provide actionable insights.
-        """
-
-        try:
-            response = self.model.generate_content(prompt)
-
-            # Calculate confidence based on context availability
-            confidence = 0.5  # Base confidence
-            if context:
-                if context.get('public_data_available'):
-                    confidence += 0.2
-                if context.get('confidence_score', 0) > 0.7:
-                    confidence += 0.2
-                if self.context_window:
-                    confidence += 0.1
-
-            return {
-                "answer": response.text.strip(),
-                "confidence": min(confidence, 0.95),
-                "sources": ["Gemini AI Model", "Cement Industry Best Practices",
-                            "Real-time Public Data"] if context.get('public_data_available') else ["Gemini AI Model",
-                                                                                                   "Cement Industry Best Practices"],
-                "context_used": bool(context),
-                "historical_context_available": len(self.context_window) > 0
-            }
-
-        except Exception as e:
-            logger.error(f"Error answering query: {e}")
-            return {
-                "answer": f"I encountered an error processing your query. Please try rephrasing or provide more context.",
-                "confidence": 0.0,
-                "sources": [],
-                "error": str(e)
-            }
-
-    async def predict_maintenance_needs(self, equipment_data: Dict[str, Any],
-                                        historical_failures: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Predict maintenance needs using historical patterns"""
-
-        prompt = f"""
-        As a predictive maintenance expert for cement plants, analyze equipment data and predict maintenance needs.
-
-        CURRENT EQUIPMENT DATA:
-        {json.dumps(equipment_data, indent=2)}
-
-        HISTORICAL FAILURE PATTERNS:
-        {json.dumps(historical_failures[-10:], indent=2)}  # Last 10 failures
-
-        Predict:
-        1. Equipment components at risk of failure (with probability)
-        2. Recommended maintenance schedule for next 30 days
-        3. Critical spare parts to maintain in inventory
-        4. Estimated downtime if maintenance is delayed
-        5. Cost-benefit analysis of preventive vs reactive maintenance
-
-        Consider:
-        - Operating hours and load factors
-        - Environmental conditions impact
-        - Wear patterns and degradation rates
-        - Industry-standard maintenance intervals
-
-        Format as JSON with clear risk scores and timelines.
-        """
-
-        try:
-            response = self.model.generate_content(prompt)
-            result_text = response.text.strip()
-
-            if result_text.startswith('```json'):
-                result_text = result_text[7:]
-            if result_text.endswith('```'):
-                result_text = result_text[:-3]
-
-            return json.loads(result_text.strip())
-
-        except Exception as e:
-            logger.error(f"Error in maintenance prediction: {e}")
-            return {
-                "error": str(e),
-                "maintenance_schedule": [],
-                "risk_assessment": []
-            }
-
-
-# Global Gemini service instance
+# Global service instance
 gemini_service = EnhancedGeminiService()

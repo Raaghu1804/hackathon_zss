@@ -16,6 +16,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def sanitize_agent_state(state_dict: dict) -> dict:
+    """Convert datetime objects to ISO strings"""
+    from datetime import datetime
+
+    sanitized = {}
+    for key, value in state_dict.items():
+        if isinstance(value, datetime):
+            sanitized[key] = value.isoformat()
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_agent_state(value)
+        elif isinstance(value, list):
+            sanitized[key] = [
+                sanitize_agent_state(item) if isinstance(item, dict) else
+                item.isoformat() if isinstance(item, datetime) else item
+                for item in value
+            ]
+        else:
+            sanitized[key] = value
+    return sanitized
+
 class EnhancedCementPlantAgent:
     """Enhanced base class for cement plant AI agents with public data integration"""
 
@@ -612,14 +632,20 @@ class EnhancedAIAgentOrchestrator:
 
         return recommendations
 
-    async def get_all_agent_states(self) -> Dict[str, AgentState]:
-        """Get current state of all agents with confidence scores"""
+    async def get_all_agent_states(self) -> Dict[str, Any]:
+        """Get current state of all agents - datetime safe"""
         states = {}
         for unit, agent in self.agents.items():
             state_dict = agent.state.dict()
             state_dict['confidence_score'] = agent.confidence_score
-            state_dict['last_public_data_update'] = agent.last_public_data_update
-            states[unit] = state_dict
+
+            if agent.last_public_data_update:
+                state_dict['last_public_data_update'] = agent.last_public_data_update.isoformat()
+            else:
+                state_dict['last_public_data_update'] = None
+
+            states[unit] = sanitize_agent_state(state_dict)
+
         return states
 
     async def answer_query(self, query: str) -> Dict[str, Any]:

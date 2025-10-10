@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu } from 'lucide-react';
+import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu, Loader, X } from 'lucide-react';
 import './App.css';
+import { queryAnalytics } from './services/api';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -9,28 +10,42 @@ function App() {
   const [wsConnected, setWsConnected] = useState(false);
   const [sensorData, setSensorData] = useState({});
   const [loading, setLoading] = useState(true);
+  const [selectedUnit, setSelectedUnit] = useState(null);
 
   useEffect(() => {
     // Setup WebSocket
+    console.log('🔌 Connecting to WebSocket...');
     const ws = new WebSocket('ws://localhost:8000/ws');
 
     ws.onopen = () => {
       setWsConnected(true);
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected');
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      console.log('📊 Received WebSocket message:', data.type);
+
       if (data.type === 'sensor_update' && data.data) {
         setSensorData(data.data);
         setLoading(false);
       }
     };
 
-    ws.onerror = () => setWsConnected(false);
-    ws.onclose = () => setWsConnected(false);
+    ws.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      setWsConnected(false);
+    };
 
-    return () => ws.close();
+    ws.onclose = () => {
+      console.log('🔌 WebSocket closed');
+      setWsConnected(false);
+    };
+
+    return () => {
+      console.log('🔌 Cleaning up WebSocket');
+      ws.close();
+    };
   }, []);
 
   const MetricCard = ({ title, value, unit, trend, status, icon: Icon, color }) => (
@@ -69,6 +84,7 @@ function App() {
     };
 
     const health = getUnitHealth(data);
+    const anomalyCount = data ? data.filter(s => s.is_anomaly).length : 0;
 
     return (
       <div className="unit-card">
@@ -94,12 +110,77 @@ function App() {
           ))}
         </div>
 
-        {data && data.filter(s => s.is_anomaly).length > 0 && (
-          <div className="unit-alerts">
+        {anomalyCount > 0 && (
+          <div
+            className="unit-alerts clickable"
+            onClick={() => setSelectedUnit({ unit, data, anomalyCount })}
+          >
             <AlertCircle size={16} color="#ff9800" />
-            <span>{data.filter(s => s.is_anomaly).length} anomalies detected</span>
+            <span>{anomalyCount} anomalies detected - Click to view details</span>
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Modal for anomaly details
+  const AnomalyModal = ({ unitData, onClose }) => {
+    if (!unitData) return null;
+
+    const unitNames = {
+      'precalciner': 'Pre-Calciner',
+      'rotary_kiln': 'Rotary Kiln',
+      'clinker_cooler': 'Clinker Cooler'
+    };
+
+    const anomalies = unitData.data.filter(s => s.is_anomaly);
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>🚨 {unitNames[unitData.unit]} - Anomaly Details</h2>
+            <button className="modal-close" onClick={onClose}>
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="modal-body">
+            <div className="anomaly-summary">
+              <AlertCircle size={32} color="#ff9800" />
+              <div>
+                <h3>{unitData.anomalyCount} Anomalies Detected</h3>
+                <p>These sensors are operating outside normal parameters</p>
+              </div>
+            </div>
+
+            <div className="anomaly-list">
+              {anomalies.map((sensor, idx) => (
+                <div key={idx} className="anomaly-item">
+                  <div className="anomaly-icon">⚠️</div>
+                  <div className="anomaly-details">
+                    <h4>{sensor.sensor_name.replace(/_/g, ' ')}</h4>
+                    <div className="anomaly-value">
+                      Current: <strong>{sensor.value.toFixed(2)} {sensor.unit_measure}</strong>
+                    </div>
+                    {sensor.optimal_range && (
+                      <div className="anomaly-range">
+                        Expected: {sensor.optimal_range[0]} - {sensor.optimal_range[1]} {sensor.unit_measure}
+                      </div>
+                    )}
+                  </div>
+                  <div className="anomaly-status">ALERT</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="anomaly-actions">
+              <button className="action-button primary">Run Diagnostics</button>
+              <button className="action-button secondary">View History</button>
+              <button className="action-button secondary">Export Report</button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -138,50 +219,47 @@ function App() {
         </div>
       </div>
 
-      <div className="metrics-section">
-        <h2 className="section-title">Key Performance Indicators</h2>
-        <div className="metrics-grid">
-          <MetricCard
-            title="Plant Efficiency"
-            value="87.5"
-            unit="%"
-            trend={2.3}
-            status="normal"
-            icon={Zap}
-            color="#00bcd4"
-          />
-          <MetricCard
-            title="Energy Consumption"
-            value="142.8"
-            unit="MW"
-            trend={-1.2}
-            status="normal"
-            icon={Activity}
-            color="#4caf50"
-          />
-          <MetricCard
-            title="CO₂ Emissions"
-            value="825"
-            unit="kg/t"
-            trend={-3.5}
-            status="warning"
-            icon={Cloud}
-            color="#ff9800"
-          />
-          <MetricCard
-            title="Alternative Fuel"
-            value="35"
-            unit="%"
-            trend={5.2}
-            status="normal"
-            icon={Leaf}
-            color="#8bc34a"
-          />
-        </div>
+      <div className="kpi-grid">
+        <MetricCard
+          title="PLANT EFFICIENCY"
+          value="87.5"
+          unit="%"
+          trend={2.3}
+          status="NORMAL"
+          icon={Zap}
+          color="#00bcd4"
+        />
+        <MetricCard
+          title="ENERGY CONSUMPTION"
+          value="142.8"
+          unit="MW"
+          trend={-1.2}
+          status="NORMAL"
+          icon={Activity}
+          color="#4caf50"
+        />
+        <MetricCard
+          title="CO₂ EMISSIONS"
+          value="825"
+          unit="kg/t"
+          trend={-3.5}
+          status="WARNING"
+          icon={Cloud}
+          color="#ff9800"
+        />
+        <MetricCard
+          title="ALTERNATIVE FUEL"
+          value="35"
+          unit="%"
+          trend={5.2}
+          status="NORMAL"
+          icon={Leaf}
+          color="#4caf50"
+        />
       </div>
 
       <div className="units-section">
-        <h2 className="section-title">Production Units</h2>
+        <h2>Production Units</h2>
         {loading ? (
           <div className="loading-state">
             <div className="spinner"></div>
@@ -196,48 +274,12 @@ function App() {
         )}
       </div>
 
-      <div className="optimization-section">
-        <div className="optimization-card">
-          <div className="optimization-header">
-            <div>
-              <h3>🔥 AI Optimization Engine</h3>
-              <p>Intelligent recommendations for optimal plant performance</p>
-            </div>
-            <button className="optimize-button">
-              Run Optimization
-            </button>
-          </div>
-          <div className="optimization-insights">
-            <div className="insight-item">
-              <div className="insight-icon" style={{ background: 'rgba(0, 188, 212, 0.2)' }}>
-                <TrendingUp size={20} color="#00bcd4" />
-              </div>
-              <div className="insight-content">
-                <div className="insight-title">Energy Efficiency</div>
-                <div className="insight-value">Potential 8% improvement</div>
-              </div>
-            </div>
-            <div className="insight-item">
-              <div className="insight-icon" style={{ background: 'rgba(76, 175, 80, 0.2)' }}>
-                <Leaf size={20} color="#4caf50" />
-              </div>
-              <div className="insight-content">
-                <div className="insight-title">Alternative Fuels</div>
-                <div className="insight-value">Increase to 45% possible</div>
-              </div>
-            </div>
-            <div className="insight-item">
-              <div className="insight-icon" style={{ background: 'rgba(255, 152, 0, 0.2)' }}>
-                <AlertCircle size={20} color="#ff9800" />
-              </div>
-              <div className="insight-content">
-                <div className="insight-title">Process Optimization</div>
-                <div className="insight-value">3 adjustments recommended</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {selectedUnit && (
+        <AnomalyModal
+          unitData={selectedUnit}
+          onClose={() => setSelectedUnit(null)}
+        />
+      )}
     </div>
   );
 
@@ -257,6 +299,8 @@ function App() {
 
   const Analytics = () => {
     const [query, setQuery] = useState('');
+    const [chatHistory, setChatHistory] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const exampleQueries = [
       "What is the current efficiency of the pre-calciner?",
@@ -265,6 +309,81 @@ function App() {
       "Suggest alternative fuel optimization strategies"
     ];
 
+    // Function to format AI response with better readability
+    const formatResponse = (text) => {
+      // Split into paragraphs and format
+      const sections = text.split(/\*\*\d+\./);
+
+      return sections.map((section, idx) => {
+        if (idx === 0) return section; // First section before numbering
+
+        // Extract title and content
+        const parts = section.split(':**');
+        if (parts.length >= 2) {
+          const title = parts[0].trim().replace(/\*/g, '');
+          const content = parts[1].trim();
+
+          return (
+            <div key={idx} className="response-section">
+              <h4>{title}</h4>
+              <p>{content.replace(/\*\*/g, '')}</p>
+            </div>
+          );
+        }
+        return <p key={idx}>{section.replace(/\*\*/g, '')}</p>;
+      });
+    };
+
+    const handleAskQuestion = async () => {
+      if (!query.trim() || isLoading) return;
+
+      const userMessage = {
+        type: 'user',
+        text: query,
+        timestamp: new Date().toISOString()
+      };
+
+      setChatHistory(prev => [...prev, userMessage]);
+      setIsLoading(true);
+
+      try {
+        console.log('📤 Sending query to API:', query);
+        const response = await queryAnalytics(query);
+        console.log('📥 Received response:', response);
+
+        const aiMessage = {
+          type: 'ai',
+          text: response.answer,
+          confidence: response.confidence,
+          agent: response.responding_agent,
+          sources: response.sources,
+          timestamp: response.timestamp
+        };
+
+        setChatHistory(prev => [...prev, aiMessage]);
+      } catch (error) {
+        console.error('❌ Error querying analytics:', error);
+
+        const errorMessage = {
+          type: 'error',
+          text: `Sorry, I encountered an error: ${error.message}. Please make sure the backend server is running.`,
+          timestamp: new Date().toISOString()
+        };
+
+        setChatHistory(prev => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+        setQuery('');
+      }
+    };
+
+    const handleKeyPress = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleAskQuestion();
+      }
+    };
+
     return (
       <div className="analytics">
         <div className="page-header">
@@ -272,29 +391,92 @@ function App() {
           <p>Ask questions about your plant operations in natural language</p>
         </div>
 
-        <div className="query-card">
-          <div className="query-input-group">
-            <input
-              type="text"
-              className="query-input"
-              placeholder="Ask a question about plant operations..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button className="query-button">
-              <Send size={20} />
-              Ask
-            </button>
+        <div className="chat-container">
+          <div className="chat-messages">
+            {chatHistory.length === 0 ? (
+              <div className="chat-welcome">
+                <BarChart3 size={48} color="#00bcd4" />
+                <h3>Welcome to AI Analytics</h3>
+                <p>Ask me anything about your cement plant operations</p>
+              </div>
+            ) : (
+              chatHistory.map((message, idx) => (
+                <div key={idx} className={`chat-message ${message.type}`}>
+                  <div className="message-header">
+                    <strong>
+                      {message.type === 'user' ? 'You' : message.agent || 'AI Assistant'}
+                    </strong>
+                    <span className="message-time">
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="message-content formatted">
+                    {message.type === 'ai' ? formatResponse(message.text) : message.text}
+                  </div>
+                  {message.confidence && (
+                    <div className="message-footer">
+                      <span className="confidence-badge">
+                        Confidence: {(message.confidence * 100).toFixed(0)}%
+                      </span>
+                      {message.sources && message.sources.length > 0 && (
+                        <span className="sources-badge">
+                          Sources: {message.sources.slice(0, 2).join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            {isLoading && (
+              <div className="chat-message ai loading">
+                <div className="message-content">
+                  <Loader className="spinner-icon" size={16} />
+                  <span>Analyzing your question...</span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="example-queries">
-            <p>Example questions:</p>
-            <div className="query-chips">
-              {exampleQueries.map((q, idx) => (
-                <button key={idx} className="query-chip" onClick={() => setQuery(q)}>
-                  {q}
-                </button>
-              ))}
+          <div className="query-card">
+            <div className="query-input-group">
+              <input
+                type="text"
+                className="query-input"
+                placeholder="Ask a question about plant operations..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyPress={handleKeyPress}
+                disabled={isLoading}
+              />
+              <button
+                className="query-button"
+                onClick={handleAskQuestion}
+                disabled={isLoading || !query.trim()}
+              >
+                {isLoading ? (
+                  <Loader className="spinner-icon" size={20} />
+                ) : (
+                  <Send size={20} />
+                )}
+                {isLoading ? 'Processing...' : 'Ask'}
+              </button>
+            </div>
+
+            <div className="example-queries">
+              <p>Example questions:</p>
+              <div className="query-chips">
+                {exampleQueries.map((q, idx) => (
+                  <button
+                    key={idx}
+                    className="query-chip"
+                    onClick={() => setQuery(q)}
+                    disabled={isLoading}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
