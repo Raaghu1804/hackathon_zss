@@ -18,7 +18,6 @@ function App() {
   const [historyData, setHistoryData] = useState([]);
 
   useEffect(() => {
-    // Setup WebSocket
     console.log('🔌 Connecting to WebSocket...');
     const ws = new WebSocket('ws://localhost:8000/ws');
 
@@ -53,13 +52,11 @@ function App() {
     };
   }, []);
 
-  // Run Diagnostics
   const handleRunDiagnostics = async (unitData) => {
     setDiagnosticsRunning(true);
     setShowDiagnosticsModal(true);
 
     try {
-      // Simulate diagnostics (replace with actual API call)
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const anomalies = unitData.data.filter(s => s.is_anomaly);
@@ -93,7 +90,6 @@ function App() {
     }
   };
 
-  // Generate recommendation based on sensor
   const generateRecommendation = (sensor) => {
     const sensorName = sensor.sensor_name.toLowerCase();
     if (sensorName.includes('temp')) {
@@ -109,16 +105,13 @@ function App() {
     }
   };
 
-  // View History
   const handleViewHistory = async (unitData) => {
     setShowHistoryModal(true);
 
     try {
-      // Fetch historical data (replace with actual API call)
       const response = await fetch(`${API_BASE}/sensors/historical/${unitData.unit}?hours=24`);
       const data = await response.json();
 
-      // Group by timestamp (last 10 readings)
       const grouped = {};
       data.slice(0, 60).forEach(reading => {
         const time = new Date(reading.timestamp).toLocaleTimeString();
@@ -137,18 +130,16 @@ function App() {
       setHistoryData(history);
     } catch (error) {
       console.error('Error fetching history:', error);
-      // Fallback mock data
       setHistoryData(generateMockHistory(unitData));
     }
   };
 
-  // Generate mock history data
   const generateMockHistory = (unitData) => {
     const now = new Date();
     const history = [];
 
     for (let i = 0; i < 10; i++) {
-      const time = new Date(now - i * 3600000); // 1 hour intervals
+      const time = new Date(now - i * 3600000);
       history.push({
         timestamp: time.toLocaleString(),
         anomalyCount: Math.floor(Math.random() * 5),
@@ -159,7 +150,6 @@ function App() {
     return history;
   };
 
-  // Export Report
   const handleExportReport = async (unitData) => {
     try {
       const unitNames = {
@@ -170,7 +160,6 @@ function App() {
 
       const anomalies = unitData.data.filter(s => s.is_anomaly);
 
-      // Create report content
       const reportContent = `
 CEMENT PLANT ANOMALY REPORT
 ============================
@@ -214,7 +203,6 @@ ${unitData.data.filter(s => !s.is_anomaly).map(sensor =>
 End of Report
 `;
 
-      // Create blob and download
       const blob = new Blob([reportContent], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -225,7 +213,6 @@ End of Report
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      // Show success message
       alert('✅ Report exported successfully!');
     } catch (error) {
       console.error('Error exporting report:', error);
@@ -308,7 +295,6 @@ End of Report
     );
   };
 
-  // Diagnostics Modal
   const DiagnosticsModal = ({ onClose }) => {
     if (!showDiagnosticsModal) return null;
 
@@ -411,7 +397,6 @@ End of Report
     );
   };
 
-  // History Modal
   const HistoryModal = ({ onClose }) => {
     if (!showHistoryModal) return null;
 
@@ -462,7 +447,6 @@ End of Report
                 className="action-button primary"
                 onClick={() => {
                   alert('📥 Downloading historical data export...');
-                  // Implement CSV export here
                 }}
               >
                 <Download size={16} /> Export CSV
@@ -474,7 +458,6 @@ End of Report
     );
   };
 
-  // Main Anomaly Modal
   const AnomalyModal = ({ unitData, onClose }) => {
     if (!unitData) return null;
 
@@ -597,7 +580,7 @@ End of Report
           value="87.5"
           unit="%"
           trend={2.3}
-          status="NORMAL"
+          status="normal"
           icon={Zap}
           color="#00bcd4"
         />
@@ -606,7 +589,7 @@ End of Report
           value="142.8"
           unit="MW"
           trend={-1.2}
-          status="NORMAL"
+          status="normal"
           icon={Activity}
           color="#4caf50"
         />
@@ -615,7 +598,7 @@ End of Report
           value="825"
           unit="kg/t"
           trend={-3.5}
-          status="WARNING"
+          status="warning"
           icon={Cloud}
           color="#ff9800"
         />
@@ -624,14 +607,14 @@ End of Report
           value="35"
           unit="%"
           trend={5.2}
-          status="NORMAL"
+          status="normal"
           icon={Leaf}
           color="#4caf50"
         />
       </div>
 
       <div className="units-section">
-        <h2>Production Units</h2>
+        <h2 className="section-title">Production Units</h2>
         {loading ? (
           <div className="loading-state">
             <div className="spinner"></div>
