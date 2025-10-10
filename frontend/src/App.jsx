@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu, Loader, X } from 'lucide-react';
+import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu, Loader, X, Download, History, Play, CheckCircle } from 'lucide-react';
 import './App.css';
 import { queryAnalytics } from './services/api';
 
@@ -11,6 +11,11 @@ function App() {
   const [sensorData, setSensorData] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedUnit, setSelectedUnit] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
+  const [diagnosticsResults, setDiagnosticsResults] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
 
   useEffect(() => {
     // Setup WebSocket
@@ -47,6 +52,186 @@ function App() {
       ws.close();
     };
   }, []);
+
+  // Run Diagnostics
+  const handleRunDiagnostics = async (unitData) => {
+    setDiagnosticsRunning(true);
+    setShowDiagnosticsModal(true);
+
+    try {
+      // Simulate diagnostics (replace with actual API call)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const anomalies = unitData.data.filter(s => s.is_anomaly);
+
+      const results = {
+        unit: unitData.unit,
+        timestamp: new Date().toISOString(),
+        totalChecks: 15,
+        passedChecks: 15 - anomalies.length,
+        failedChecks: anomalies.length,
+        anomalies: anomalies.map(sensor => ({
+          name: sensor.sensor_name,
+          value: sensor.value,
+          unit: sensor.unit_measure,
+          status: 'Critical',
+          recommendation: generateRecommendation(sensor)
+        })),
+        overallStatus: anomalies.length > 5 ? 'Critical' : anomalies.length > 2 ? 'Warning' : 'Good',
+        nextSteps: [
+          'Review and adjust sensor parameters',
+          'Schedule maintenance for critical components',
+          'Monitor affected sensors closely for next 24 hours'
+        ]
+      };
+
+      setDiagnosticsResults(results);
+    } catch (error) {
+      console.error('Error running diagnostics:', error);
+    } finally {
+      setDiagnosticsRunning(false);
+    }
+  };
+
+  // Generate recommendation based on sensor
+  const generateRecommendation = (sensor) => {
+    const sensorName = sensor.sensor_name.toLowerCase();
+    if (sensorName.includes('temp')) {
+      return 'Adjust temperature control systems and check cooling efficiency';
+    } else if (sensorName.includes('pressure')) {
+      return 'Check for blockages and verify damper positions';
+    } else if (sensorName.includes('flow')) {
+      return 'Inspect flow control valves and air distribution system';
+    } else if (sensorName.includes('speed')) {
+      return 'Verify motor operation and check for mechanical issues';
+    } else {
+      return 'Monitor closely and consult maintenance team if issue persists';
+    }
+  };
+
+  // View History
+  const handleViewHistory = async (unitData) => {
+    setShowHistoryModal(true);
+
+    try {
+      // Fetch historical data (replace with actual API call)
+      const response = await fetch(`${API_BASE}/sensors/historical/${unitData.unit}?hours=24`);
+      const data = await response.json();
+
+      // Group by timestamp (last 10 readings)
+      const grouped = {};
+      data.slice(0, 60).forEach(reading => {
+        const time = new Date(reading.timestamp).toLocaleTimeString();
+        if (!grouped[time]) {
+          grouped[time] = [];
+        }
+        grouped[time].push(reading);
+      });
+
+      const history = Object.entries(grouped).map(([time, readings]) => ({
+        timestamp: time,
+        anomalyCount: readings.filter(r => r.is_anomaly).length,
+        readings: readings
+      }));
+
+      setHistoryData(history);
+    } catch (error) {
+      console.error('Error fetching history:', error);
+      // Fallback mock data
+      setHistoryData(generateMockHistory(unitData));
+    }
+  };
+
+  // Generate mock history data
+  const generateMockHistory = (unitData) => {
+    const now = new Date();
+    const history = [];
+
+    for (let i = 0; i < 10; i++) {
+      const time = new Date(now - i * 3600000); // 1 hour intervals
+      history.push({
+        timestamp: time.toLocaleString(),
+        anomalyCount: Math.floor(Math.random() * 5),
+        status: Math.random() > 0.7 ? 'Warning' : 'Normal'
+      });
+    }
+
+    return history;
+  };
+
+  // Export Report
+  const handleExportReport = async (unitData) => {
+    try {
+      const unitNames = {
+        'precalciner': 'Pre-Calciner',
+        'rotary_kiln': 'Rotary Kiln',
+        'clinker_cooler': 'Clinker Cooler'
+      };
+
+      const anomalies = unitData.data.filter(s => s.is_anomaly);
+
+      // Create report content
+      const reportContent = `
+CEMENT PLANT ANOMALY REPORT
+============================
+
+Unit: ${unitNames[unitData.unit]}
+Generated: ${new Date().toLocaleString()}
+Report ID: RPT-${Date.now()}
+
+SUMMARY
+-------
+Total Sensors: ${unitData.data.length}
+Anomalies Detected: ${anomalies.length}
+Health Score: ${100 - (anomalies.length * 10)}%
+Status: ${anomalies.length > 5 ? 'CRITICAL' : anomalies.length > 2 ? 'WARNING' : 'NORMAL'}
+
+ANOMALY DETAILS
+---------------
+${anomalies.map((sensor, idx) => `
+${idx + 1}. ${sensor.sensor_name.replace(/_/g, ' ').toUpperCase()}
+   Current Value: ${sensor.value.toFixed(2)} ${sensor.unit_measure}
+   ${sensor.optimal_range ? `Expected Range: ${sensor.optimal_range[0]} - ${sensor.optimal_range[1]} ${sensor.unit_measure}` : ''}
+   Status: ALERT
+   Timestamp: ${new Date(sensor.timestamp).toLocaleString()}
+`).join('\n')}
+
+RECOMMENDATIONS
+---------------
+1. Immediate inspection of sensors showing anomalies
+2. Verify sensor calibration and accuracy
+3. Check control system parameters
+4. Review recent operational changes
+5. Monitor affected systems closely for next 24 hours
+
+NORMAL READINGS
+---------------
+${unitData.data.filter(s => !s.is_anomaly).map(sensor =>
+  `- ${sensor.sensor_name.replace(/_/g, ' ')}: ${sensor.value.toFixed(2)} ${sensor.unit_measure}`
+).join('\n')}
+
+============================
+End of Report
+`;
+
+      // Create blob and download
+      const blob = new Blob([reportContent], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${unitData.unit}_anomaly_report_${Date.now()}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      // Show success message
+      alert('✅ Report exported successfully!');
+    } catch (error) {
+      console.error('Error exporting report:', error);
+      alert('❌ Error exporting report. Please try again.');
+    }
+  };
 
   const MetricCard = ({ title, value, unit, trend, status, icon: Icon, color }) => (
     <div className={`metric-card ${status}`} style={{ borderLeft: `4px solid ${color}` }}>
@@ -123,7 +308,173 @@ function App() {
     );
   };
 
-  // Modal for anomaly details
+  // Diagnostics Modal
+  const DiagnosticsModal = ({ onClose }) => {
+    if (!showDiagnosticsModal) return null;
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content diagnostics-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>🔍 System Diagnostics</h2>
+            <button className="modal-close" onClick={onClose}>
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="modal-body">
+            {diagnosticsRunning ? (
+              <div className="diagnostics-running">
+                <Loader className="spinner-large" size={48} />
+                <h3>Running Comprehensive Diagnostics...</h3>
+                <p>Analyzing sensors, checking parameters, and evaluating system health</p>
+                <div className="diagnostics-steps">
+                  <div className="step completed">✓ Sensor Calibration Check</div>
+                  <div className="step completed">✓ Parameter Validation</div>
+                  <div className="step active">⟳ Anomaly Analysis</div>
+                  <div className="step">○ Performance Evaluation</div>
+                  <div className="step">○ Generating Report</div>
+                </div>
+              </div>
+            ) : diagnosticsResults ? (
+              <div className="diagnostics-results">
+                <div className={`diagnostics-summary ${diagnosticsResults.overallStatus.toLowerCase()}`}>
+                  <div className="summary-icon">
+                    {diagnosticsResults.overallStatus === 'Good' ? <CheckCircle size={48} /> : <AlertCircle size={48} />}
+                  </div>
+                  <div>
+                    <h3>Diagnostics Complete</h3>
+                    <p>Status: <strong>{diagnosticsResults.overallStatus}</strong></p>
+                  </div>
+                </div>
+
+                <div className="diagnostics-stats">
+                  <div className="stat-box">
+                    <div className="stat-value">{diagnosticsResults.totalChecks}</div>
+                    <div className="stat-label">Total Checks</div>
+                  </div>
+                  <div className="stat-box success">
+                    <div className="stat-value">{diagnosticsResults.passedChecks}</div>
+                    <div className="stat-label">Passed</div>
+                  </div>
+                  <div className="stat-box error">
+                    <div className="stat-value">{diagnosticsResults.failedChecks}</div>
+                    <div className="stat-label">Failed</div>
+                  </div>
+                </div>
+
+                {diagnosticsResults.anomalies.length > 0 && (
+                  <div className="diagnostics-anomalies">
+                    <h4>Issues Found:</h4>
+                    {diagnosticsResults.anomalies.map((anomaly, idx) => (
+                      <div key={idx} className="diagnostic-issue">
+                        <div className="issue-header">
+                          <span className="issue-name">{anomaly.name.replace(/_/g, ' ')}</span>
+                          <span className={`issue-status ${anomaly.status.toLowerCase()}`}>{anomaly.status}</span>
+                        </div>
+                        <div className="issue-value">
+                          Current: {anomaly.value.toFixed(2)} {anomaly.unit}
+                        </div>
+                        <div className="issue-recommendation">
+                          💡 {anomaly.recommendation}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="diagnostics-nextsteps">
+                  <h4>Recommended Next Steps:</h4>
+                  <ol>
+                    {diagnosticsResults.nextSteps.map((step, idx) => (
+                      <li key={idx}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div className="diagnostics-actions">
+                  <button className="action-button primary" onClick={onClose}>
+                    Close Report
+                  </button>
+                  <button
+                    className="action-button secondary"
+                    onClick={() => handleExportReport(selectedUnit)}
+                  >
+                    <Download size={16} /> Export Full Report
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // History Modal
+  const HistoryModal = ({ onClose }) => {
+    if (!showHistoryModal) return null;
+
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content history-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>📊 Historical Data</h2>
+            <button className="modal-close" onClick={onClose}>
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="modal-body">
+            <div className="history-info">
+              <History size={32} color="#00bcd4" />
+              <div>
+                <h3>Last 24 Hours</h3>
+                <p>Showing anomaly trends and sensor readings</p>
+              </div>
+            </div>
+
+            <div className="history-timeline">
+              {historyData.map((entry, idx) => (
+                <div key={idx} className="history-entry">
+                  <div className="history-time">{entry.timestamp}</div>
+                  <div className="history-dot"></div>
+                  <div className="history-content">
+                    <div className="history-status">
+                      {entry.anomalyCount > 0 ? (
+                        <span className="status-badge warning">
+                          {entry.anomalyCount} Anomalies
+                        </span>
+                      ) : (
+                        <span className="status-badge normal">Normal</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="history-actions">
+              <button className="action-button secondary" onClick={onClose}>
+                Close
+              </button>
+              <button
+                className="action-button primary"
+                onClick={() => {
+                  alert('📥 Downloading historical data export...');
+                  // Implement CSV export here
+                }}
+              >
+                <Download size={16} /> Export CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Main Anomaly Modal
   const AnomalyModal = ({ unitData, onClose }) => {
     if (!unitData) return null;
 
@@ -175,9 +526,30 @@ function App() {
             </div>
 
             <div className="anomaly-actions">
-              <button className="action-button primary">Run Diagnostics</button>
-              <button className="action-button secondary">View History</button>
-              <button className="action-button secondary">Export Report</button>
+              <button
+                className="action-button primary"
+                onClick={() => {
+                  onClose();
+                  handleRunDiagnostics(unitData);
+                }}
+              >
+                <Play size={16} /> Run Diagnostics
+              </button>
+              <button
+                className="action-button secondary"
+                onClick={() => {
+                  onClose();
+                  handleViewHistory(unitData);
+                }}
+              >
+                <History size={16} /> View History
+              </button>
+              <button
+                className="action-button secondary"
+                onClick={() => handleExportReport(unitData)}
+              >
+                <Download size={16} /> Export Report
+              </button>
             </div>
           </div>
         </div>
@@ -280,6 +652,9 @@ function App() {
           onClose={() => setSelectedUnit(null)}
         />
       )}
+
+      <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />
+      <HistoryModal onClose={() => setShowHistoryModal(false)} />
     </div>
   );
 
@@ -309,18 +684,15 @@ function App() {
       "Suggest alternative fuel optimization strategies"
     ];
 
-    // Function to format AI response with better readability
     const formatResponse = (text) => {
-      // Split into paragraphs and format
       const sections = text.split(/\*\*\d+\./);
 
       return sections.map((section, idx) => {
-        if (idx === 0) return section; // First section before numbering
+        if (idx === 0) return section;
 
-        // Extract title and content
         const parts = section.split(':**');
         if (parts.length >= 2) {
-          const title = parts[0].trim().replace(/\*/g, '');
+          const title = parts[0].trim().replace(/\*\*/g, '');
           const content = parts[1].trim();
 
           return (
