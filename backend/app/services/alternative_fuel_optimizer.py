@@ -1,398 +1,323 @@
-import numpy as np
-from scipy.optimize import linprog, minimize
-from typing import Dict, List, Tuple, Optional, Any  # FIXED: Added Any import
-from datetime import datetime, timedelta
-import pandas as pd
-import logging
+# backend/app/services/alternative_fuel_optimizer.py
 
-logger = logging.getLogger(__name__)
+import numpy as np
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from scipy.optimize import linprog
+import json
+from app.services.gemini_service import gemini_service
 
 
 class AlternativeFuelOptimizer:
-    """Optimizer for alternative fuel mix in cement production"""
+    """Optimize alternative fuel mix for cost and sustainability"""
 
     def __init__(self):
-        self.fuel_properties = {
+        # Fuel properties (calorific value in MJ/kg, cost in $/GJ, CO2 in kg/GJ)
+        self.fuel_database = {
             'coal': {
-                'calorific_value': 25.5,  # GJ/tonne
-                'ash_content': 12,  # %
-                'moisture': 5,  # %
-                'cost_per_gj': 3.2,  # USD/GJ
-                'co2_emission': 94.6,  # kg CO2/GJ
+                'calorific_value': 25.5,
+                'ash_content': 12.0,
+                'cost_per_gj': 3.2,
+                'co2_per_gj': 94.6,
                 'availability': 'unlimited',
-                'handling_cost': 0.5  # USD/tonne
+                'handling_difficulty': 'low'
             },
             'rice_husk': {
                 'calorific_value': 16.2,
-                'ash_content': 18,
-                'moisture': 10,
+                'ash_content': 18.0,
                 'cost_per_gj': 1.8,
-                'co2_emission': 9.46,  # 90% reduction (biogenic)
+                'co2_per_gj': 9.5,  # 90% biogenic
                 'availability': 'seasonal',
-                'handling_cost': 1.2,
-                'preparation_required': True
+                'handling_difficulty': 'medium',
+                'availability_mt_year': 31400000  # India availability
             },
             'rdf': {  # Refuse Derived Fuel
                 'calorific_value': 18.5,
-                'ash_content': 15,
-                'moisture': 20,
+                'ash_content': 15.0,
                 'cost_per_gj': 0.5,
-                'co2_emission': 37.84,  # 60% reduction
-                'availability': 'continuous',
-                'handling_cost': 2.0,
-                'quality_variation': 'high'
+                'co2_per_gj': 37.8,  # 60% biogenic
+                'availability': 'high',
+                'handling_difficulty': 'medium',
+                'availability_mt_year': 62000000
             },
             'biomass': {
                 'calorific_value': 14.8,
-                'ash_content': 8,
-                'moisture': 15,
+                'ash_content': 8.0,
                 'cost_per_gj': 2.1,
-                'co2_emission': 4.73,  # 95% reduction (biogenic)
+                'co2_per_gj': 4.7,  # 95% biogenic
                 'availability': 'seasonal',
-                'handling_cost': 1.5,
-                'storage_requirements': 'covered'
+                'handling_difficulty': 'high'
             },
-            'pet_coke': {
-                'calorific_value': 32.5,
-                'ash_content': 1,
-                'moisture': 1,
+            'petcoke': {
+                'calorific_value': 32.0,
+                'ash_content': 4.0,
                 'cost_per_gj': 2.8,
-                'co2_emission': 92.8,
-                'availability': 'continuous',
-                'handling_cost': 0.8,
-                'sulfur_content': 4.5  # %
+                'co2_per_gj': 102.0,
+                'availability': 'high',
+                'handling_difficulty': 'low'
             },
-            'tyre_chips': {
-                'calorific_value': 30.0,
-                'ash_content': 10,
-                'moisture': 2,
+            'plastic_waste': {
+                'calorific_value': 28.0,
+                'ash_content': 10.0,
                 'cost_per_gj': 0.8,
-                'co2_emission': 75.68,  # 20% reduction
-                'availability': 'continuous',
-                'handling_cost': 1.8,
-                'zinc_content': 1.2  # %
+                'co2_per_gj': 50.0,
+                'availability': 'medium',
+                'handling_difficulty': 'high'
             }
         }
 
-        self.constraints = {
-            'max_ash_content': 15,  # %
-            'max_moisture': 12,  # %
-            'min_calorific_value': 18,  # GJ/tonne
-            'max_alternative_fuel_rate': 60  # %
+        self.seasonal_factors = {
+            'rice_husk': {
+                'Jan': 1.2, 'Feb': 1.0, 'Mar': 0.8, 'Apr': 0.5,
+                'May': 0.3, 'Jun': 0.4, 'Jul': 0.6, 'Aug': 0.8,
+                'Sep': 1.0, 'Oct': 1.2, 'Nov': 1.3, 'Dec': 1.2
+            },
+            'biomass': {
+                'Jan': 0.7, 'Feb': 0.6, 'Mar': 0.5, 'Apr': 0.8,
+                'May': 1.0, 'Jun': 1.2, 'Jul': 1.0, 'Aug': 0.9,
+                'Sep': 0.8, 'Oct': 0.7, 'Nov': 0.6, 'Dec': 0.7
+            }
         }
 
-    def optimize_fuel_mix(self,
-                          total_energy_required: float,  # GJ/hour
-                          availability_constraints: Dict[str, float],  # tonnes available
-                          quality_requirements: Optional[Dict[str, float]] = None,
-                          environmental_targets: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
-        """
-        Optimize fuel mix using linear programming
+    async def optimize_fuel_mix(
+            self,
+            total_energy_required_gj: float,
+            cost_priority: float = 0.5,  # 0-1, higher = prioritize cost over emissions
+            max_alternative_fuel_rate: float = 0.65,  # Maximum 65% AFR
+            quality_constraints: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Optimize fuel mix using linear programming"""
 
-        Args:
-            total_energy_required: Total energy needed (GJ/hour)
-            availability_constraints: Available quantity for each fuel (tonnes)
-            quality_requirements: Quality constraints (ash, moisture, etc.)
-            environmental_targets: CO2 emission targets
+        if quality_constraints is None:
+            quality_constraints = {
+                'max_ash_content': 14.0,
+                'min_calorific_value': 20.0
+            }
 
-        Returns:
-            Optimized fuel mix with cost and emission metrics
-        """
-        try:
-            fuels = list(self.fuel_properties.keys())
-            n_fuels = len(fuels)
+        # Get current month for seasonal adjustments
+        current_month = datetime.now().strftime('%b')
 
-            # Objective: Minimize cost
-            c = np.array([
-                self.fuel_properties[fuel]['cost_per_gj'] +
-                self.fuel_properties[fuel]['handling_cost'] / self.fuel_properties[fuel]['calorific_value']
-                for fuel in fuels
-            ])
+        # Available fuels
+        fuels = list(self.fuel_database.keys())
+        n_fuels = len(fuels)
 
-            # Constraints
-            A_eq = []
-            b_eq = []
-            A_ub = []
-            b_ub = []
+        # Objective function: weighted combination of cost and emissions
+        costs = [self.fuel_database[f]['cost_per_gj'] for f in fuels]
+        emissions = [self.fuel_database[f]['co2_per_gj'] for f in fuels]
 
-            # Energy requirement constraint (equality)
-            energy_coeffs = [self.fuel_properties[fuel]['calorific_value'] for fuel in fuels]
-            A_eq.append(energy_coeffs)
-            b_eq.append(total_energy_required)
+        # Normalize and weight
+        max_cost = max(costs)
+        max_emission = max(emissions)
+        c = [
+            cost_priority * (costs[i] / max_cost) +
+            (1 - cost_priority) * (emissions[i] / max_emission)
+            for i in range(n_fuels)
+        ]
 
-            # Quality constraints (inequality)
-            if quality_requirements:
-                # Ash content constraint
-                if 'max_ash_content' in quality_requirements:
-                    ash_coeffs = [
-                        self.fuel_properties[fuel]['ash_content'] * self.fuel_properties[fuel]['calorific_value']
-                        for fuel in fuels
-                    ]
-                    A_ub.append(ash_coeffs)
-                    b_ub.append(quality_requirements['max_ash_content'] * total_energy_required)
+        # Constraints
+        A_ub = []
+        b_ub = []
 
-                # Moisture constraint
-                if 'max_moisture' in quality_requirements:
-                    moisture_coeffs = [
-                        self.fuel_properties[fuel]['moisture'] * self.fuel_properties[fuel]['calorific_value']
-                        for fuel in fuels
-                    ]
-                    A_ub.append(moisture_coeffs)
-                    b_ub.append(quality_requirements['max_moisture'] * total_energy_required)
+        # 1. Ash content constraint
+        ash_constraint = [self.fuel_database[f]['ash_content'] for f in fuels]
+        A_ub.append(ash_constraint)
+        b_ub.append(quality_constraints['max_ash_content'])
 
-            # Availability constraints
-            for i, fuel in enumerate(fuels):
-                if fuel in availability_constraints:
-                    constraint = [0] * n_fuels
-                    constraint[i] = 1
-                    A_ub.append(constraint)
-                    b_ub.append(availability_constraints[fuel])
+        # 2. Alternative fuel rate constraint (coal must be >= 35%)
+        alt_fuel_constraint = [-1 if f == 'coal' else 1 for f in fuels]
+        A_ub.append(alt_fuel_constraint)
+        b_ub.append(max_alternative_fuel_rate)
 
-            # Environmental constraints
-            if environmental_targets and 'max_co2_kg_per_gj' in environmental_targets:
-                co2_coeffs = [
-                    self.fuel_properties[fuel]['co2_emission'] * self.fuel_properties[fuel]['calorific_value']
-                    for fuel in fuels
-                ]
-                A_ub.append(co2_coeffs)
-                b_ub.append(environmental_targets['max_co2_kg_per_gj'] * total_energy_required)
+        # 3. Individual fuel availability constraints
+        for i, fuel in enumerate(fuels):
+            constraint = [0] * n_fuels
+            constraint[i] = 1
+            A_ub.append(constraint)
 
-            # Bounds (non-negative quantities)
-            bounds = [(0, None) for _ in range(n_fuels)]
+            # Apply seasonal factors
+            availability_factor = 1.0
+            if fuel in self.seasonal_factors:
+                availability_factor = self.seasonal_factors[fuel].get(current_month, 1.0)
 
-            # Solve linear program
-            result = linprog(
-                c=c,
-                A_eq=np.array(A_eq) if A_eq else None,
-                b_eq=np.array(b_eq) if b_eq else None,
-                A_ub=np.array(A_ub) if A_ub else None,
-                b_ub=np.array(b_ub) if b_ub else None,
-                bounds=bounds,
-                method='highs'
-            )
-
-            if result.success:
-                # Convert solution to fuel mix
-                fuel_tonnes = dict(zip(fuels, result.x))
-
-                # Calculate percentages
-                total_tonnes = sum(result.x)
-                fuel_mix = {fuel: (tonnes / total_tonnes * 100) if total_tonnes > 0 else 0
-                            for fuel, tonnes in fuel_tonnes.items()}
-
-                # Calculate mix properties
-                mix_properties = self._calculate_mix_properties(
-                    {fuel: tonnes / sum(result.x) if sum(result.x) > 0 else 0
-                     for fuel, tonnes in fuel_tonnes.items()}
-                )
-
-                return {
-                    'success': True,
-                    'optimal_mix': {k: round(v, 2) for k, v in fuel_mix.items() if v > 0.1},
-                    'fuel_quantities_tonnes': {k: round(v, 2) for k, v in fuel_tonnes.items() if v > 0.1},
-                    'total_cost_per_hour': round(result.fun, 2),
-                    'mix_properties': mix_properties,
-                    'co2_reduction': self._calculate_co2_reduction(
-                        {fuel: tonnes / sum(result.x) if sum(result.x) > 0 else 0
-                         for fuel, tonnes in fuel_tonnes.items()}
-                    ),
-                    'implementation_plan': self._generate_implementation_plan(fuel_mix)
-                }
+            # Maximum fraction based on handling and availability
+            if fuel == 'coal':
+                max_fraction = 1.0
+            elif self.fuel_database[fuel]['handling_difficulty'] == 'high':
+                max_fraction = 0.25 * availability_factor
+            elif self.fuel_database[fuel]['handling_difficulty'] == 'medium':
+                max_fraction = 0.35 * availability_factor
             else:
-                return {
-                    'success': False,
-                    'error': 'Optimization failed',
-                    'message': result.message
-                }
+                max_fraction = 0.45 * availability_factor
 
+            b_ub.append(max_fraction)
+
+        # Equality constraint: fractions sum to 1
+        A_eq = [[1] * n_fuels]
+        b_eq = [1]
+
+        # Bounds: each fuel between 0 and 1
+        bounds = [(0, 1) for _ in range(n_fuels)]
+
+        # Solve optimization
+        result = linprog(
+            c,
+            A_ub=A_ub,
+            b_ub=b_ub,
+            A_eq=A_eq,
+            b_eq=b_eq,
+            bounds=bounds,
+            method='highs'
+        )
+
+        if not result.success:
+            return {
+                'success': False,
+                'error': 'Optimization failed',
+                'message': result.message
+            }
+
+        # Calculate detailed results
+        fuel_mix = dict(zip(fuels, result.x))
+
+        # Remove negligible contributions
+        fuel_mix = {k: v for k, v in fuel_mix.items() if v > 0.01}
+
+        # Calculate metrics
+        total_cost = sum(
+            fuel_mix[f] * self.fuel_database[f]['cost_per_gj'] for f in fuel_mix) * total_energy_required_gj
+        total_emissions = sum(
+            fuel_mix[f] * self.fuel_database[f]['co2_per_gj'] for f in fuel_mix) * total_energy_required_gj
+
+        # Baseline (100% coal)
+        baseline_cost = self.fuel_database['coal']['cost_per_gj'] * total_energy_required_gj
+        baseline_emissions = self.fuel_database['coal']['co2_per_gj'] * total_energy_required_gj
+
+        # Alternative fuel rate
+        afr = (1 - fuel_mix.get('coal', 0)) * 100
+
+        # Get AI recommendations
+        recommendations = await self._get_gemini_recommendations(
+            fuel_mix,
+            total_energy_required_gj,
+            current_month
+        )
+
+        return {
+            'success': True,
+            'optimal_mix': fuel_mix,
+            'alternative_fuel_rate_percent': round(afr, 1),
+            'energy_breakdown_gj': {
+                fuel: round(fraction * total_energy_required_gj, 2)
+                for fuel, fraction in fuel_mix.items()
+            },
+            'economics': {
+                'total_cost_usd': round(total_cost, 2),
+                'baseline_cost_usd': round(baseline_cost, 2),
+                'cost_savings_usd': round(baseline_cost - total_cost, 2),
+                'cost_savings_percent': round((baseline_cost - total_cost) / baseline_cost * 100, 1)
+            },
+            'environmental': {
+                'total_co2_tonnes': round(total_emissions / 1000, 2),
+                'baseline_co2_tonnes': round(baseline_emissions / 1000, 2),
+                'co2_reduction_tonnes': round((baseline_emissions - total_emissions) / 1000, 2),
+                'co2_reduction_percent': round((baseline_emissions - total_emissions) / baseline_emissions * 100, 1)
+            },
+            'quality_metrics': {
+                'weighted_ash_content': round(sum(fuel_mix[f] * self.fuel_database[f]['ash_content'] for f in fuel_mix),
+                                              2),
+                'weighted_calorific_value': round(
+                    sum(fuel_mix[f] * self.fuel_database[f]['calorific_value'] for f in fuel_mix), 2)
+            },
+            'recommendations': recommendations,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+    async def _get_gemini_recommendations(
+            self,
+            fuel_mix: Dict[str, float],
+            total_energy_gj: float,
+            current_month: str
+    ) -> List[str]:
+        """Get AI-powered recommendations for fuel mix optimization"""
+
+        prompt = f"""
+        As an alternative fuel optimization expert for cement plants, analyze this fuel mix:
+
+        Current Mix:
+        {json.dumps({f: f"{v * 100:.1f}%" for f, v in fuel_mix.items()}, indent=2)}
+
+        Total Energy: {total_energy_gj} GJ
+        Current Month: {current_month}
+
+        Provide 3-5 specific, actionable recommendations to:
+        1. Improve cost efficiency
+        2. Increase alternative fuel rate
+        3. Optimize for current season
+        4. Enhance operational stability
+
+        Format as JSON array of strings:
+        ["recommendation 1", "recommendation 2", ...]
+        """
+
+        try:
+            response = await gemini_service.model.generate_content(prompt)
+            result_text = response.text.strip()
+            if result_text.startswith('```json'):
+                result_text = result_text[7:]
+            if result_text.endswith('```'):
+                result_text = result_text[:-3]
+            return json.loads(result_text.strip())
         except Exception as e:
-            logger.error(f"Fuel optimization error: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            print(f"Gemini recommendations error: {e}")
+            return [
+                "Increase rice husk proportion during harvest season (Oct-Jan)",
+                "Monitor ash content closely with RDF usage above 20%",
+                "Consider blending plastic waste with biomass for stable combustion"
+            ]
 
-    def _calculate_mix_properties(self, fuel_mix: Dict[str, float]) -> Dict[str, float]:
-        """Calculate properties of the fuel mix"""
-        properties = {
-            'weighted_calorific_value': 0,
-            'weighted_ash_content': 0,
-            'weighted_moisture': 0,
-            'weighted_co2_emission': 0,
-            'estimated_flame_temperature': 0
-        }
+    def calculate_monthly_savings(
+            self,
+            current_mix: Dict[str, float],
+            optimized_mix: Dict[str, float],
+            monthly_production_tonnes: float = 85500  # 285 t/h * 24h * 30d / 2.4 = 85,500t
+    ) -> Dict[str, Any]:
+        """Calculate monthly savings from optimized fuel mix"""
 
-        for fuel, fraction in fuel_mix.items():
-            if fraction > 0:
-                properties['weighted_calorific_value'] += fraction * self.fuel_properties[fuel]['calorific_value']
-                properties['weighted_ash_content'] += fraction * self.fuel_properties[fuel]['ash_content']
-                properties['weighted_moisture'] += fraction * self.fuel_properties[fuel]['moisture']
-                properties['weighted_co2_emission'] += fraction * self.fuel_properties[fuel]['co2_emission']
+        # Energy per tonne of clinker: ~3.2 GJ/tonne
+        energy_per_tonne = 3.2
+        total_energy = monthly_production_tonnes * energy_per_tonne
 
-        # Estimate flame temperature based on calorific value and moisture
-        properties['estimated_flame_temperature'] = (
-                1800 +
-                (properties['weighted_calorific_value'] - 20) * 15 -
-                properties['weighted_moisture'] * 10
-        )
+        # Current costs and emissions
+        current_cost = sum(
+            current_mix.get(f, 0) * self.fuel_database[f]['cost_per_gj']
+            for f in self.fuel_database
+        ) * total_energy
 
-        return {k: round(v, 2) for k, v in properties.items()}
+        current_emissions = sum(
+            current_mix.get(f, 0) * self.fuel_database[f]['co2_per_gj']
+            for f in self.fuel_database
+        ) * total_energy
 
-    def _calculate_co2_reduction(self, fuel_mix: Dict[str, float]) -> Dict[str, float]:
-        """Calculate CO2 reduction compared to coal baseline"""
-        coal_baseline = self.fuel_properties['coal']['co2_emission']
-        mix_emission = sum(
-            fraction * self.fuel_properties[fuel]['co2_emission']
-            for fuel, fraction in fuel_mix.items()
-        )
+        # Optimized costs and emissions
+        optimized_cost = sum(
+            optimized_mix.get(f, 0) * self.fuel_database[f]['cost_per_gj']
+            for f in self.fuel_database
+        ) * total_energy
 
-        reduction_percentage = ((coal_baseline - mix_emission) / coal_baseline) * 100
-
-        return {
-            'baseline_emission_kg_per_gj': coal_baseline,
-            'mix_emission_kg_per_gj': round(mix_emission, 2),
-            'reduction_percentage': round(reduction_percentage, 2),
-            'annual_co2_savings_tonnes': round(reduction_percentage * 0.01 * 850 * 350 * 24, 0)
-        }
-
-    def _generate_implementation_plan(self, fuel_mix: Dict[str, float]) -> List[Dict[str, Any]]:
-        """Generate implementation plan for optimal fuel mix"""
-        plan = []
-
-        for fuel, fraction in fuel_mix.items():
-            if fraction > 0.01:  # Only include significant fuels
-                fuel_plan = {
-                    'fuel': fuel,
-                    'percentage': round(fraction, 2),
-                    'daily_requirement_tonnes': round(fraction * 0.01 * 300, 2),
-                    'preparation_requirements': [],
-                    'handling_considerations': [],
-                    'storage_requirements': []
-                }
-
-                # Add fuel-specific requirements
-                if fuel == 'rice_husk':
-                    fuel_plan['preparation_requirements'] = [
-                        'Install size reduction equipment',
-                        'Ensure moisture control systems'
-                    ]
-                    fuel_plan['storage_requirements'] = [
-                        'Covered storage area',
-                        'Fire prevention systems'
-                    ]
-                elif fuel == 'rdf':
-                    fuel_plan['preparation_requirements'] = [
-                        'Quality screening system',
-                        'Metal separation equipment'
-                    ]
-                    fuel_plan['handling_considerations'] = [
-                        'Odor management',
-                        'Consistent feed rate control'
-                    ]
-                elif fuel == 'tyre_chips':
-                    fuel_plan['preparation_requirements'] = [
-                        'Shredding equipment',
-                        'Wire removal system'
-                    ]
-                    fuel_plan['handling_considerations'] = [
-                        'Special environmental permits required',
-                        'Emission monitoring for zinc'
-                    ]
-
-                plan.append(fuel_plan)
-
-        return plan
-
-    def optimize_for_emissions(self,
-                               target_emission_reduction: float,  # % reduction
-                               energy_required: float,
-                               availability: Dict[str, float]) -> Dict[str, Any]:
-        """Optimize specifically for emission reduction target"""
-
-        coal_baseline = self.fuel_properties['coal']['co2_emission']
-        target_emission = coal_baseline * (1 - target_emission_reduction / 100)
-
-        environmental_targets = {'max_co2_kg_per_gj': target_emission}
-
-        result = self.optimize_fuel_mix(
-            energy_required,
-            availability,
-            self.constraints,
-            environmental_targets
-        )
-
-        if result['success']:
-            return result
-        else:
-            return {
-                'success': False,
-                'message': 'Cannot achieve target emission reduction with available fuels',
-                'target_emission': target_emission,
-                'recommendation': 'Increase alternative fuel availability or reduce emission target'
-            }
-
-    def seasonal_fuel_planning(self, annual_demand: float) -> Dict[str, Any]:
-        """Plan fuel procurement considering seasonal availability"""
-
-        seasonal_availability = {
-            'Q1': {
-                'rice_husk': 0.4,
-                'biomass': 0.3,
-                'rdf': 1.0,
-                'coal': 1.0
-            },
-            'Q2': {
-                'rice_husk': 0.1,
-                'biomass': 0.2,
-                'rdf': 1.0,
-                'coal': 1.0
-            },
-            'Q3': {
-                'rice_husk': 0.2,
-                'biomass': 0.4,
-                'rdf': 1.0,
-                'coal': 1.0
-            },
-            'Q4': {
-                'rice_husk': 0.3,
-                'biomass': 0.1,
-                'rdf': 1.0,
-                'coal': 1.0
-            }
-        }
-
-        quarterly_plans = {}
-        total_cost = 0
-        total_co2 = 0
-
-        for quarter, availability in seasonal_availability.items():
-            quarterly_energy = annual_demand / 4
-
-            result = self.optimize_fuel_mix(
-                quarterly_energy / (90 * 24),
-                {k: v * 1000 for k, v in availability.items()},
-                self.constraints
-            )
-
-            if result['success']:
-                quarterly_plans[quarter] = {
-                    'fuel_mix': result['optimal_mix'],
-                    'cost': result['total_cost_per_hour'] * 90 * 24,
-                    'co2_emission': result['mix_properties']['weighted_co2_emission']
-                }
-                total_cost += quarterly_plans[quarter]['cost']
-                total_co2 += quarterly_plans[quarter]['co2_emission'] * quarterly_energy
+        optimized_emissions = sum(
+            optimized_mix.get(f, 0) * self.fuel_database[f]['co2_per_gj']
+            for f in self.fuel_database
+        ) * total_energy
 
         return {
-            'quarterly_plans': quarterly_plans,
-            'annual_cost': total_cost,
-            'annual_co2_emissions': total_co2,
-            'average_alternative_fuel_rate': np.mean([
-                sum(v for k, v in plan['fuel_mix'].items() if k != 'coal')
-                for plan in quarterly_plans.values()
-            ]) if quarterly_plans else 0
+            'monthly_savings_usd': round(current_cost - optimized_cost, 2),
+            'annual_savings_usd': round((current_cost - optimized_cost) * 12, 2),
+            'monthly_co2_reduction_tonnes': round((current_emissions - optimized_emissions) / 1000, 2),
+            'annual_co2_reduction_tonnes': round((current_emissions - optimized_emissions) * 12 / 1000, 2),
+            'roi_months': round(current_cost / (current_cost - optimized_cost),
+                                1) if current_cost > optimized_cost else 0
         }
 
 
 # Global instance
-alternative_fuel_optimizer = AlternativeFuelOptimizer()
+fuel_optimizer = AlternativeFuelOptimizer()

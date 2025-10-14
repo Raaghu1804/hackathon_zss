@@ -1,860 +1,419 @@
+// frontend/src/App.jsx - COMPLETE UPDATED VERSION
+
 import React, { useState, useEffect } from 'react';
-import { Activity, MessageSquare, BarChart3, Gauge, Cloud, TrendingUp, TrendingDown, AlertCircle, Leaf, Send, Zap, Database, Cpu, Loader, X, Download, History, Play, CheckCircle } from 'lucide-react';
-import './App.css';
-import { queryAnalytics } from './services/api';
+import { Activity, Cpu, MessageSquare, BarChart3, AlertCircle, TrendingUp, Server, Gauge, Wrench, Fuel, Leaf } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000/api';
+// Import new components
+import PredictiveMaintenance from './components/PredictiveMaintenance';
+import FuelOptimizer from './components/FuelOptimizer';
+import SustainabilityDashboard from './components/SustainabilityDashboard';
 
-function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [wsConnected, setWsConnected] = useState(false);
-  const [sensorData, setSensorData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [selectedUnit, setSelectedUnit] = useState(null);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
-  const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
-  const [diagnosticsResults, setDiagnosticsResults] = useState(null);
-  const [historyData, setHistoryData] = useState([]);
+// API Service
+const API_BASE = 'http://localhost:8000';
 
-  useEffect(() => {
-    console.log('🔌 Connecting to WebSocket...');
-    const ws = new WebSocket('ws://localhost:8000/ws');
+const api = {
+  getUnitsStatus: async () => {
+    const response = await fetch(`${API_BASE}/api/units/status`);
+    return response.json();
+  },
+  getAgentCommunications: async () => {
+    const response = await fetch(`${API_BASE}/api/agents/communications`);
+    return response.json();
+  },
+  queryAnalytics: async (question) => {
+    const response = await fetch(`${API_BASE}/api/analytics/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    return response.json();
+  },
+  getHistoricalData: async (unit, hours = 24) => {
+    const response = await fetch(`${API_BASE}/api/sensors/historical/${unit}?hours=${hours}`);
+    return response.json();
+  }
+};
 
-    ws.onopen = () => {
-      setWsConnected(true);
-      console.log('✅ WebSocket connected');
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('📊 Received WebSocket message:', data.type);
-
-      if (data.type === 'sensor_update' && data.data) {
-        setSensorData(data.data);
-        setLoading(false);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
-      setWsConnected(false);
-    };
-
-    ws.onclose = () => {
-      console.log('🔌 WebSocket closed');
-      setWsConnected(false);
-    };
-
-    return () => {
-      console.log('🔌 Cleaning up WebSocket');
-      ws.close();
-    };
-  }, []);
-
-  const handleRunDiagnostics = async (unitData) => {
-    setDiagnosticsRunning(true);
-    setShowDiagnosticsModal(true);
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const anomalies = unitData.data.filter(s => s.is_anomaly);
-
-      const results = {
-        unit: unitData.unit,
-        timestamp: new Date().toISOString(),
-        totalChecks: 15,
-        passedChecks: 15 - anomalies.length,
-        failedChecks: anomalies.length,
-        anomalies: anomalies.map(sensor => ({
-          name: sensor.sensor_name,
-          value: sensor.value,
-          unit: sensor.unit_measure,
-          status: 'Critical',
-          recommendation: generateRecommendation(sensor)
-        })),
-        overallStatus: anomalies.length > 5 ? 'Critical' : anomalies.length > 2 ? 'Warning' : 'Good',
-        nextSteps: [
-          'Review and adjust sensor parameters',
-          'Schedule maintenance for critical components',
-          'Monitor affected sensors closely for next 24 hours'
-        ]
-      };
-
-      setDiagnosticsResults(results);
-    } catch (error) {
-      console.error('Error running diagnostics:', error);
-    } finally {
-      setDiagnosticsRunning(false);
-    }
+// Metric Card Component
+const MetricCard = ({ title, value, unit, trend, status }) => {
+  const statusColors = {
+    normal: '#4caf50',
+    warning: '#ff9800',
+    critical: '#f44336'
   };
 
-  const generateRecommendation = (sensor) => {
-    const sensorName = sensor.sensor_name.toLowerCase();
-    if (sensorName.includes('temp')) {
-      return 'Adjust temperature control systems and check cooling efficiency';
-    } else if (sensorName.includes('pressure')) {
-      return 'Check for blockages and verify damper positions';
-    } else if (sensorName.includes('flow')) {
-      return 'Inspect flow control valves and air distribution system';
-    } else if (sensorName.includes('speed')) {
-      return 'Verify motor operation and check for mechanical issues';
-    } else {
-      return 'Monitor closely and consult maintenance team if issue persists';
-    }
-  };
-
-  const handleViewHistory = async (unitData) => {
-    setShowHistoryModal(true);
-
-    try {
-      const response = await fetch(`${API_BASE}/sensors/historical/${unitData.unit}?hours=24`);
-      const data = await response.json();
-
-      const grouped = {};
-      data.slice(0, 60).forEach(reading => {
-        const time = new Date(reading.timestamp).toLocaleTimeString();
-        if (!grouped[time]) {
-          grouped[time] = [];
-        }
-        grouped[time].push(reading);
-      });
-
-      const history = Object.entries(grouped).map(([time, readings]) => ({
-        timestamp: time,
-        anomalyCount: readings.filter(r => r.is_anomaly).length,
-        readings: readings
-      }));
-
-      setHistoryData(history);
-    } catch (error) {
-      console.error('Error fetching history:', error);
-      setHistoryData(generateMockHistory(unitData));
-    }
-  };
-
-  const generateMockHistory = (unitData) => {
-    const now = new Date();
-    const history = [];
-
-    for (let i = 0; i < 10; i++) {
-      const time = new Date(now - i * 3600000);
-      history.push({
-        timestamp: time.toLocaleString(),
-        anomalyCount: Math.floor(Math.random() * 5),
-        status: Math.random() > 0.7 ? 'Warning' : 'Normal'
-      });
-    }
-
-    return history;
-  };
-
-  const handleExportReport = async (unitData) => {
-    try {
-      const unitNames = {
-        'precalciner': 'Pre-Calciner',
-        'rotary_kiln': 'Rotary Kiln',
-        'clinker_cooler': 'Clinker Cooler'
-      };
-
-      const anomalies = unitData.data.filter(s => s.is_anomaly);
-
-      const reportContent = `
-CEMENT PLANT ANOMALY REPORT
-============================
-
-Unit: ${unitNames[unitData.unit]}
-Generated: ${new Date().toLocaleString()}
-Report ID: RPT-${Date.now()}
-
-SUMMARY
--------
-Total Sensors: ${unitData.data.length}
-Anomalies Detected: ${anomalies.length}
-Health Score: ${100 - (anomalies.length * 10)}%
-Status: ${anomalies.length > 5 ? 'CRITICAL' : anomalies.length > 2 ? 'WARNING' : 'NORMAL'}
-
-ANOMALY DETAILS
----------------
-${anomalies.map((sensor, idx) => `
-${idx + 1}. ${sensor.sensor_name.replace(/_/g, ' ').toUpperCase()}
-   Current Value: ${sensor.value.toFixed(2)} ${sensor.unit_measure}
-   ${sensor.optimal_range ? `Expected Range: ${sensor.optimal_range[0]} - ${sensor.optimal_range[1]} ${sensor.unit_measure}` : ''}
-   Status: ALERT
-   Timestamp: ${new Date(sensor.timestamp).toLocaleString()}
-`).join('\n')}
-
-RECOMMENDATIONS
----------------
-1. Immediate inspection of sensors showing anomalies
-2. Verify sensor calibration and accuracy
-3. Check control system parameters
-4. Review recent operational changes
-5. Monitor affected systems closely for next 24 hours
-
-NORMAL READINGS
----------------
-${unitData.data.filter(s => !s.is_anomaly).map(sensor =>
-  `- ${sensor.sensor_name.replace(/_/g, ' ')}: ${sensor.value.toFixed(2)} ${sensor.unit_measure}`
-).join('\n')}
-
-============================
-End of Report
-`;
-
-      const blob = new Blob([reportContent], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${unitData.unit}_anomaly_report_${Date.now()}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      alert('✅ Report exported successfully!');
-    } catch (error) {
-      console.error('Error exporting report:', error);
-      alert('❌ Error exporting report. Please try again.');
-    }
-  };
-
-  const MetricCard = ({ title, value, unit, trend, status, icon: Icon, color }) => (
-    <div className={`metric-card ${status}`} style={{ borderLeft: `4px solid ${color}` }}>
+  return (
+    <div className="metric-card">
       <div className="metric-header">
-        <div className="metric-title">
-          <Icon size={20} color={color} />
-          <h3>{title}</h3>
-        </div>
-        <span className={`status-badge ${status}`}>{status}</span>
+        <h3>{title}</h3>
+        <span className={`status-badge status-${status}`}>
+          <span className="status-dot" style={{ backgroundColor: statusColors[status] }}></span>
+          {status}
+        </span>
       </div>
       <div className="metric-value">
         <span className="value">{value}</span>
         <span className="unit">{unit}</span>
       </div>
-      <div className="metric-trend">
-        {trend > 0 ? <TrendingUp size={16} color="#4caf50" /> : <TrendingDown size={16} color="#f44336" />}
-        <span style={{ color: trend > 0 ? '#4caf50' : '#f44336' }}>
-          {Math.abs(trend)}% from last hour
-        </span>
-      </div>
+      {trend && (
+        <div className="metric-trend">
+          <TrendingUp size={16} />
+          <span>{trend}%</span>
+        </div>
+      )}
     </div>
   );
+};
 
-  const UnitCard = ({ unit, data }) => {
-    const unitNames = {
-      'precalciner': 'Pre-Calciner',
-      'rotary_kiln': 'Rotary Kiln',
-      'clinker_cooler': 'Clinker Cooler'
-    };
+// Unit Status Card Component
+const UnitStatusCard = ({ unit, data }) => {
+  const getUnitIcon = (unitName) => {
+    switch(unitName) {
+      case 'precalciner': return <Server size={24} />;
+      case 'rotary_kiln': return <Cpu size={24} />;
+      case 'clinker_cooler': return <Activity size={24} />;
+      default: return <Server size={24} />;
+    }
+  };
 
-    const getUnitHealth = (sensors) => {
-      if (!sensors || sensors.length === 0) return 85;
-      const anomalyCount = sensors.filter(s => s.is_anomaly).length;
-      return Math.max(50, 100 - (anomalyCount * 10));
-    };
+  const formatUnitName = (name) => {
+    return name.split('_').map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  };
 
-    const health = getUnitHealth(data);
-    const anomalyCount = data ? data.filter(s => s.is_anomaly).length : 0;
+  return (
+    <div className="unit-card">
+      <div className="unit-header">
+        <div className="unit-title">
+          {getUnitIcon(unit)}
+          <h2>{formatUnitName(unit)}</h2>
+        </div>
+        <span className={`status-indicator status-${data?.status || 'normal'}`}>
+          {data?.status || 'normal'}
+        </span>
+      </div>
 
-    return (
-      <div className="unit-card">
-        <div className="unit-header">
-          <div className="unit-title">
-            <Cpu size={24} color="#00bcd4" />
-            <h3>{unitNames[unit] || unit}</h3>
+      <div className="unit-metrics">
+        <div className="metric-row">
+          <span className="metric-label">Health Score</span>
+          <div className="metric-bar">
+            <div
+              className="metric-bar-fill"
+              style={{
+                width: `${data?.overall_health || 0}%`,
+                backgroundColor: data?.overall_health > 70 ? '#4caf50' :
+                               data?.overall_health > 40 ? '#ff9800' : '#f44336'
+              }}
+            />
           </div>
-          <div className={`health-indicator ${health > 80 ? 'good' : health > 60 ? 'warning' : 'critical'}`}>
-            <div className="health-value">{health}%</div>
-            <div className="health-label">Health</div>
-          </div>
+          <span className="metric-percentage">{data?.overall_health || 0}%</span>
         </div>
 
-        <div className="sensors-grid">
-          {data && data.slice(0, 6).map((sensor, idx) => (
-            <div key={idx} className={`sensor-item ${sensor.is_anomaly ? 'anomaly' : ''}`}>
-              <div className="sensor-name">{sensor.sensor_name.replace(/_/g, ' ')}</div>
-              <div className="sensor-value">
-                {sensor.value.toFixed(2)} <span className="sensor-unit">{sensor.unit_measure}</span>
-              </div>
+        <div className="metric-row">
+          <span className="metric-label">Efficiency</span>
+          <div className="metric-bar">
+            <div
+              className="metric-bar-fill"
+              style={{
+                width: `${data?.efficiency || 0}%`,
+                backgroundColor: '#00bcd4'
+              }}
+            />
+          </div>
+          <span className="metric-percentage">{data?.efficiency || 0}%</span>
+        </div>
+      </div>
+
+      {data?.sensors && (
+        <div className="sensor-grid">
+          {data.sensors.slice(0, 4).map((sensor, idx) => (
+            <div key={idx} className="sensor-item">
+              <span className="sensor-name">{sensor.sensor_name.replace(/_/g, ' ')}</span>
+              <span className={`sensor-value ${sensor.is_anomaly ? 'anomaly' : ''}`}>
+                {sensor.value.toFixed(2)} {sensor.unit_measure}
+              </span>
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+};
 
-        {anomalyCount > 0 && (
-          <div
-            className="unit-alerts clickable"
-            onClick={() => setSelectedUnit({ unit, data, anomalyCount })}
+// Communication Item Component
+const CommunicationItem = ({ comm }) => {
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const severityColors = {
+    info: '#2196f3',
+    warning: '#ff9800',
+    critical: '#f44336'
+  };
+
+  return (
+    <div className="comm-item">
+      <div className="comm-header">
+        <div className="comm-agents">
+          <span className="agent-from">{comm.from_agent}</span>
+          <span className="arrow">→</span>
+          <span className="agent-to">{comm.to_agent}</span>
+        </div>
+        <div className="comm-meta">
+          <span
+            className="severity-badge"
+            style={{ backgroundColor: severityColors[comm.severity] }}
           >
-            <AlertCircle size={16} color="#ff9800" />
-            <span>{anomalyCount} anomalies detected - Click to view details</span>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const DiagnosticsModal = ({ onClose }) => {
-    if (!showDiagnosticsModal) return null;
-
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content diagnostics-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header">
-            <h2>🔍 System Diagnostics</h2>
-            <button className="modal-close" onClick={onClose}>
-              <X size={24} />
-            </button>
-          </div>
-
-          <div className="modal-body">
-            {diagnosticsRunning ? (
-              <div className="diagnostics-running">
-                <Loader className="spinner-large" size={48} />
-                <h3>Running Comprehensive Diagnostics...</h3>
-                <p>Analyzing sensors, checking parameters, and evaluating system health</p>
-                <div className="diagnostics-steps">
-                  <div className="step completed">✓ Sensor Calibration Check</div>
-                  <div className="step completed">✓ Parameter Validation</div>
-                  <div className="step active">⟳ Anomaly Analysis</div>
-                  <div className="step">○ Performance Evaluation</div>
-                  <div className="step">○ Generating Report</div>
-                </div>
-              </div>
-            ) : diagnosticsResults ? (
-              <div className="diagnostics-results">
-                <div className={`diagnostics-summary ${diagnosticsResults.overallStatus.toLowerCase()}`}>
-                  <div className="summary-icon">
-                    {diagnosticsResults.overallStatus === 'Good' ? <CheckCircle size={48} /> : <AlertCircle size={48} />}
-                  </div>
-                  <div>
-                    <h3>Diagnostics Complete</h3>
-                    <p>Status: <strong>{diagnosticsResults.overallStatus}</strong></p>
-                  </div>
-                </div>
-
-                <div className="diagnostics-stats">
-                  <div className="stat-box">
-                    <div className="stat-value">{diagnosticsResults.totalChecks}</div>
-                    <div className="stat-label">Total Checks</div>
-                  </div>
-                  <div className="stat-box success">
-                    <div className="stat-value">{diagnosticsResults.passedChecks}</div>
-                    <div className="stat-label">Passed</div>
-                  </div>
-                  <div className="stat-box error">
-                    <div className="stat-value">{diagnosticsResults.failedChecks}</div>
-                    <div className="stat-label">Failed</div>
-                  </div>
-                </div>
-
-                {diagnosticsResults.anomalies.length > 0 && (
-                  <div className="diagnostics-anomalies">
-                    <h4>Issues Found:</h4>
-                    {diagnosticsResults.anomalies.map((anomaly, idx) => (
-                      <div key={idx} className="diagnostic-issue">
-                        <div className="issue-header">
-                          <span className="issue-name">{anomaly.name.replace(/_/g, ' ')}</span>
-                          <span className={`issue-status ${anomaly.status.toLowerCase()}`}>{anomaly.status}</span>
-                        </div>
-                        <div className="issue-value">
-                          Current: {anomaly.value.toFixed(2)} {anomaly.unit}
-                        </div>
-                        <div className="issue-recommendation">
-                          💡 {anomaly.recommendation}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="diagnostics-nextsteps">
-                  <h4>Recommended Next Steps:</h4>
-                  <ol>
-                    {diagnosticsResults.nextSteps.map((step, idx) => (
-                      <li key={idx}>{step}</li>
-                    ))}
-                  </ol>
-                </div>
-
-                <div className="diagnostics-actions">
-                  <button className="action-button primary" onClick={onClose}>
-                    Close Report
-                  </button>
-                  <button
-                    className="action-button secondary"
-                    onClick={() => handleExportReport(selectedUnit)}
-                  >
-                    <Download size={16} /> Export Full Report
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
+            {comm.severity}
+          </span>
+          <span className="timestamp">{formatTime(comm.timestamp)}</span>
         </div>
       </div>
-    );
-  };
-
-  const HistoryModal = ({ onClose }) => {
-    if (!showHistoryModal) return null;
-
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content history-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header">
-            <h2>📊 Historical Data</h2>
-            <button className="modal-close" onClick={onClose}>
-              <X size={24} />
-            </button>
-          </div>
-
-          <div className="modal-body">
-            <div className="history-info">
-              <History size={32} color="#00bcd4" />
-              <div>
-                <h3>Last 24 Hours</h3>
-                <p>Showing anomaly trends and sensor readings</p>
-              </div>
-            </div>
-
-            <div className="history-timeline">
-              {historyData.map((entry, idx) => (
-                <div key={idx} className="history-entry">
-                  <div className="history-time">{entry.timestamp}</div>
-                  <div className="history-dot"></div>
-                  <div className="history-content">
-                    <div className="history-status">
-                      {entry.anomalyCount > 0 ? (
-                        <span className="status-badge warning">
-                          {entry.anomalyCount} Anomalies
-                        </span>
-                      ) : (
-                        <span className="status-badge normal">Normal</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="history-actions">
-              <button className="action-button secondary" onClick={onClose}>
-                Close
-              </button>
-              <button
-                className="action-button primary"
-                onClick={() => {
-                  alert('📥 Downloading historical data export...');
-                }}
-              >
-                <Download size={16} /> Export CSV
-              </button>
-            </div>
-          </div>
+      <div className="comm-message">{comm.message}</div>
+      {comm.action_taken && (
+        <div className="comm-action">
+          <strong>Action:</strong> {comm.action_taken}
         </div>
-      </div>
-    );
-  };
+      )}
+    </div>
+  );
+};
 
-  const AnomalyModal = ({ unitData, onClose }) => {
-    if (!unitData) return null;
+// Main App Component
+function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [unitsStatus, setUnitsStatus] = useState([]);
+  const [communications, setCommunications] = useState([]);
+  const [analyticsQuery, setAnalyticsQuery] = useState('');
+  const [analyticsResponse, setAnalyticsResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
 
-    const unitNames = {
-      'precalciner': 'Pre-Calciner',
-      'rotary_kiln': 'Rotary Kiln',
-      'clinker_cooler': 'Clinker Cooler'
+  useEffect(() => {
+    // Load initial data
+    loadUnitsStatus();
+    loadCommunications();
+
+    // Setup WebSocket connection
+    const ws = new WebSocket('ws://localhost:8000/ws');
+
+    ws.onopen = () => {
+      setWsConnected(true);
+      console.log('WebSocket connected');
     };
 
-    const anomalies = unitData.data.filter(s => s.is_anomaly);
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'sensor_update') {
+        // Update real-time data
+        loadUnitsStatus();
+      }
+    };
 
-    return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header">
-            <h2>🚨 {unitNames[unitData.unit]} - Anomaly Details</h2>
-            <button className="modal-close" onClick={onClose}>
-              <X size={24} />
-            </button>
-          </div>
+    ws.onclose = () => {
+      setWsConnected(false);
+      console.log('WebSocket disconnected');
+    };
 
-          <div className="modal-body">
-            <div className="anomaly-summary">
-              <AlertCircle size={32} color="#ff9800" />
-              <div>
-                <h3>{unitData.anomalyCount} Anomalies Detected</h3>
-                <p>These sensors are operating outside normal parameters</p>
-              </div>
-            </div>
+    // Periodic refresh
+    const interval = setInterval(() => {
+      if (activeTab === 'dashboard') loadUnitsStatus();
+      if (activeTab === 'communications') loadCommunications();
+    }, 5000);
 
-            <div className="anomaly-list">
-              {anomalies.map((sensor, idx) => (
-                <div key={idx} className="anomaly-item">
-                  <div className="anomaly-icon">⚠️</div>
-                  <div className="anomaly-details">
-                    <h4>{sensor.sensor_name.replace(/_/g, ' ')}</h4>
-                    <div className="anomaly-value">
-                      Current: <strong>{sensor.value.toFixed(2)} {sensor.unit_measure}</strong>
-                    </div>
-                    {sensor.optimal_range && (
-                      <div className="anomaly-range">
-                        Expected: {sensor.optimal_range[0]} - {sensor.optimal_range[1]} {sensor.unit_measure}
-                      </div>
-                    )}
-                  </div>
-                  <div className="anomaly-status">ALERT</div>
-                </div>
-              ))}
-            </div>
+    return () => {
+      ws.close();
+      clearInterval(interval);
+    };
+  }, [activeTab]);
 
-            <div className="anomaly-actions">
-              <button
-                className="action-button primary"
-                onClick={() => {
-                  onClose();
-                  handleRunDiagnostics(unitData);
-                }}
-              >
-                <Play size={16} /> Run Diagnostics
-              </button>
-              <button
-                className="action-button secondary"
-                onClick={() => {
-                  onClose();
-                  handleViewHistory(unitData);
-                }}
-              >
-                <History size={16} /> View History
-              </button>
-              <button
-                className="action-button secondary"
-                onClick={() => handleExportReport(unitData)}
-              >
-                <Download size={16} /> Export Report
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const loadUnitsStatus = async () => {
+    try {
+      const data = await api.getUnitsStatus();
+      setUnitsStatus(data);
+    } catch (error) {
+      console.error('Error loading units status:', error);
+    }
   };
 
-  const Dashboard = () => (
-    <div className="dashboard">
-      <div className="dashboard-hero">
-        <div className="hero-content">
-          <h1>AI-Driven Cement Plant Optimization</h1>
-          <p>Real-time monitoring and intelligent optimization powered by advanced AI</p>
-        </div>
-        <div className="hero-stats">
-          <div className="hero-stat">
-            <Zap size={24} color="#00bcd4" />
-            <div>
-              <div className="stat-value">87.5%</div>
-              <div className="stat-label">Plant Efficiency</div>
-            </div>
-          </div>
-          <div className="hero-stat">
-            <Database size={24} color="#4caf50" />
-            <div>
-              <div className="stat-value">{Object.keys(sensorData).length}</div>
-              <div className="stat-label">Active Units</div>
-            </div>
-          </div>
-          <div className="hero-stat">
-            <Activity size={24} color="#ff9800" />
-            <div>
-              <div className="stat-value">
-                {wsConnected ? 'Live' : 'Offline'}
-              </div>
-              <div className="stat-label">Status</div>
-            </div>
-          </div>
+  const loadCommunications = async () => {
+    try {
+      const data = await api.getAgentCommunications();
+      setCommunications(data);
+    } catch (error) {
+      console.error('Error loading communications:', error);
+    }
+  };
+
+  const handleAnalyticsQuery = async () => {
+    if (!analyticsQuery.trim()) return;
+
+    setLoading(true);
+    try {
+      const response = await api.queryAnalytics(analyticsQuery);
+      setAnalyticsResponse(response);
+    } catch (error) {
+      console.error('Error querying analytics:', error);
+    }
+    setLoading(false);
+  };
+
+  const renderDashboard = () => (
+    <div className="dashboard-container">
+      <div className="dashboard-header">
+        <h1>Plant Operations Dashboard</h1>
+        <div className="connection-status">
+          <span className={`status-dot ${wsConnected ? 'connected' : 'disconnected'}`}></span>
+          {wsConnected ? 'Real-time Connected' : 'Connecting...'}
         </div>
       </div>
 
-      <div className="kpi-grid">
+      <div className="overview-cards">
         <MetricCard
-          title="PLANT EFFICIENCY"
+          title="Plant Efficiency"
           value="87.5"
           unit="%"
           trend={2.3}
           status="normal"
-          icon={Zap}
-          color="#00bcd4"
         />
         <MetricCard
-          title="ENERGY CONSUMPTION"
+          title="Energy Consumption"
           value="142.8"
           unit="MW"
           trend={-1.2}
           status="normal"
-          icon={Activity}
-          color="#4caf50"
         />
         <MetricCard
-          title="CO₂ EMISSIONS"
-          value="825"
-          unit="kg/t"
-          trend={-3.5}
+          title="Production Rate"
+          value="285"
+          unit="t/h"
+          trend={0.8}
           status="warning"
-          icon={Cloud}
-          color="#ff9800"
         />
         <MetricCard
-          title="ALTERNATIVE FUEL"
-          value="35"
-          unit="%"
-          trend={5.2}
-          status="normal"
-          icon={Leaf}
-          color="#4caf50"
+          title="Active Alerts"
+          value="3"
+          unit=""
+          status="warning"
         />
       </div>
 
-      <div className="units-section">
-        <h2 className="section-title">Production Units</h2>
-        {loading ? (
-          <div className="loading-state">
-            <div className="spinner"></div>
-            <p>Loading sensor data...</p>
+      <div className="units-grid">
+        {unitsStatus.map((unit, idx) => (
+          <UnitStatusCard key={idx} unit={unit.unit} data={unit} />
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderCommunications = () => (
+    <div className="communications-container">
+      <div className="comm-header">
+        <h1>Agent Communications</h1>
+        <div className="comm-stats">
+          <span>Total: {communications.length}</span>
+          <span className="critical-count">
+            Critical: {communications.filter(c => c.severity === 'critical').length}
+          </span>
+        </div>
+      </div>
+
+      <div className="comm-list">
+        {communications.length === 0 ? (
+          <div className="empty-state">
+            <MessageSquare size={48} />
+            <p>No agent communications yet</p>
           </div>
         ) : (
-          <div className="units-grid">
-            {Object.entries(sensorData).map(([unit, data]) => (
-              <UnitCard key={unit} unit={unit} data={data} />
-            ))}
-          </div>
+          communications.map((comm, idx) => (
+            <CommunicationItem key={idx} comm={comm} />
+          ))
         )}
       </div>
+    </div>
+  );
 
-      {selectedUnit && (
-        <AnomalyModal
-          unitData={selectedUnit}
-          onClose={() => setSelectedUnit(null)}
-        />
+  const renderAnalytics = () => (
+    <div className="analytics-container">
+      <div className="analytics-header">
+        <h1>AI Analytics</h1>
+        <p>Ask questions about plant operations and receive AI-powered insights</p>
+      </div>
+
+      <div className="query-section">
+        <div className="query-input-wrapper">
+          <input
+            type="text"
+            className="query-input"
+            placeholder="Ask about plant operations, efficiency, or optimization..."
+            value={analyticsQuery}
+            onChange={(e) => setAnalyticsQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAnalyticsQuery()}
+          />
+          <button
+            className="query-button"
+            onClick={handleAnalyticsQuery}
+            disabled={loading}
+          >
+            {loading ? 'Analyzing...' : 'Analyze'}
+          </button>
+        </div>
+
+        <div className="query-suggestions">
+          <span>Try asking:</span>
+          <button
+            className="suggestion-chip"
+            onClick={() => setAnalyticsQuery("What is the current efficiency of the pre-calciner?")}
+          >
+            Pre-calciner efficiency
+          </button>
+          <button
+            className="suggestion-chip"
+            onClick={() => setAnalyticsQuery("How can we optimize the rotary kiln temperature?")}
+          >
+            Kiln optimization
+          </button>
+          <button
+            className="suggestion-chip"
+            onClick={() => setAnalyticsQuery("What are the main issues in the clinker cooler?")}
+          >
+            Cooler issues
+          </button>
+        </div>
+      </div>
+
+      {analyticsResponse && (
+        <div className="response-section">
+          <div className="response-header">
+            <div className="responding-agent">
+              <Cpu size={20} />
+              <span>{analyticsResponse.responding_agent}</span>
+            </div>
+            <div className="confidence">
+              Confidence: {(analyticsResponse.confidence * 100).toFixed(0)}%
+            </div>
+          </div>
+          <div className="response-content">
+            {analyticsResponse.answer}
+          </div>
+        </div>
       )}
-
-      <DiagnosticsModal onClose={() => setShowDiagnosticsModal(false)} />
-      <HistoryModal onClose={() => setShowHistoryModal(false)} />
     </div>
   );
-
-  const Communications = () => (
-    <div className="communications">
-      <div className="page-header">
-        <h1>Agent Communications</h1>
-        <p>Real-time coordination between AI agents</p>
-      </div>
-      <div className="empty-state">
-        <MessageSquare size={64} color="#64748b" />
-        <h3>No Communications Yet</h3>
-        <p>AI agents will communicate here when anomalies are detected</p>
-      </div>
-    </div>
-  );
-
-  const Analytics = () => {
-    const [query, setQuery] = useState('');
-    const [chatHistory, setChatHistory] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
-
-    const exampleQueries = [
-      "What is the current efficiency of the pre-calciner?",
-      "How can we optimize the rotary kiln temperature?",
-      "What are the main issues in the clinker cooler?",
-      "Suggest alternative fuel optimization strategies"
-    ];
-
-    const formatResponse = (text) => {
-      const sections = text.split(/\*\*\d+\./);
-
-      return sections.map((section, idx) => {
-        if (idx === 0) return section;
-
-        const parts = section.split(':**');
-        if (parts.length >= 2) {
-          const title = parts[0].trim().replace(/\*\*/g, '');
-          const content = parts[1].trim();
-
-          return (
-            <div key={idx} className="response-section">
-              <h4>{title}</h4>
-              <p>{content.replace(/\*\*/g, '')}</p>
-            </div>
-          );
-        }
-        return <p key={idx}>{section.replace(/\*\*/g, '')}</p>;
-      });
-    };
-
-    const handleAskQuestion = async () => {
-      if (!query.trim() || isLoading) return;
-
-      const userMessage = {
-        type: 'user',
-        text: query,
-        timestamp: new Date().toISOString()
-      };
-
-      setChatHistory(prev => [...prev, userMessage]);
-      setIsLoading(true);
-
-      try {
-        console.log('📤 Sending query to API:', query);
-        const response = await queryAnalytics(query);
-        console.log('📥 Received response:', response);
-
-        const aiMessage = {
-          type: 'ai',
-          text: response.answer,
-          confidence: response.confidence,
-          agent: response.responding_agent,
-          sources: response.sources,
-          timestamp: response.timestamp
-        };
-
-        setChatHistory(prev => [...prev, aiMessage]);
-      } catch (error) {
-        console.error('❌ Error querying analytics:', error);
-
-        const errorMessage = {
-          type: 'error',
-          text: `Sorry, I encountered an error: ${error.message}. Please make sure the backend server is running.`,
-          timestamp: new Date().toISOString()
-        };
-
-        setChatHistory(prev => [...prev, errorMessage]);
-      } finally {
-        setIsLoading(false);
-        setQuery('');
-      }
-    };
-
-    const handleKeyPress = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleAskQuestion();
-      }
-    };
-
-    return (
-      <div className="analytics">
-        <div className="page-header">
-          <h1>AI Analytics</h1>
-          <p>Ask questions about your plant operations in natural language</p>
-        </div>
-
-        <div className="chat-container">
-          <div className="chat-messages">
-            {chatHistory.length === 0 ? (
-              <div className="chat-welcome">
-                <BarChart3 size={48} color="#00bcd4" />
-                <h3>Welcome to AI Analytics</h3>
-                <p>Ask me anything about your cement plant operations</p>
-              </div>
-            ) : (
-              chatHistory.map((message, idx) => (
-                <div key={idx} className={`chat-message ${message.type}`}>
-                  <div className="message-header">
-                    <strong>
-                      {message.type === 'user' ? 'You' : message.agent || 'AI Assistant'}
-                    </strong>
-                    <span className="message-time">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="message-content formatted">
-                    {message.type === 'ai' ? formatResponse(message.text) : message.text}
-                  </div>
-                  {message.confidence && (
-                    <div className="message-footer">
-                      <span className="confidence-badge">
-                        Confidence: {(message.confidence * 100).toFixed(0)}%
-                      </span>
-                      {message.sources && message.sources.length > 0 && (
-                        <span className="sources-badge">
-                          Sources: {message.sources.slice(0, 2).join(', ')}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-            {isLoading && (
-              <div className="chat-message ai loading">
-                <div className="message-content">
-                  <Loader className="spinner-icon" size={16} />
-                  <span>Analyzing your question...</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="query-card">
-            <div className="query-input-group">
-              <input
-                type="text"
-                className="query-input"
-                placeholder="Ask a question about plant operations..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                disabled={isLoading}
-              />
-              <button
-                className="query-button"
-                onClick={handleAskQuestion}
-                disabled={isLoading || !query.trim()}
-              >
-                {isLoading ? (
-                  <Loader className="spinner-icon" size={20} />
-                ) : (
-                  <Send size={20} />
-                )}
-                {isLoading ? 'Processing...' : 'Ask'}
-              </button>
-            </div>
-
-            <div className="example-queries">
-              <p>Example questions:</p>
-              <div className="query-chips">
-                {exampleQueries.map((q, idx) => (
-                  <button
-                    key={idx}
-                    className="query-chip"
-                    onClick={() => setQuery(q)}
-                    disabled={isLoading}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="app">
       <nav className="navbar">
         <div className="nav-brand">
-          <Gauge size={32} />
-          <div>
-            <div className="brand-title">Cement AI Optimizer</div>
-            <div className="brand-subtitle">Version 2.0</div>
-          </div>
-        </div>
-
-        <div className="nav-center">
-          <div className={`connection-indicator ${wsConnected ? 'connected' : 'disconnected'}`}>
-            <div className="indicator-dot"></div>
-            <span>{wsConnected ? 'Real-time Connected' : 'Connecting...'}</span>
-          </div>
+          <Gauge size={28} />
+          <span>Cement AI Optimizer</span>
         </div>
 
         <div className="nav-tabs">
@@ -863,30 +422,653 @@ End of Report
             onClick={() => setActiveTab('dashboard')}
           >
             <Activity size={20} />
-            <span>Dashboard</span>
+            Dashboard
           </button>
           <button
             className={`nav-tab ${activeTab === 'communications' ? 'active' : ''}`}
             onClick={() => setActiveTab('communications')}
           >
             <MessageSquare size={20} />
-            <span>Communications</span>
+            Communications
           </button>
           <button
             className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
             <BarChart3 size={20} />
-            <span>AI Analytics</span>
+            AI Analytics
+          </button>
+
+          {/* ========== NEW TABS ADDED BELOW ========== */}
+          <button
+            className={`nav-tab ${activeTab === 'maintenance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('maintenance')}
+          >
+            <Wrench size={20} />
+            Maintenance
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'fuel' ? 'active' : ''}`}
+            onClick={() => setActiveTab('fuel')}
+          >
+            <Fuel size={20} />
+            Fuel Optimizer
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'sustainability' ? 'active' : ''}`}
+            onClick={() => setActiveTab('sustainability')}
+          >
+            <Leaf size={20} />
+            Sustainability
+          </button>
+          {/* ========== END NEW TABS ========== */}
+        </div>
+
+        <div className="nav-actions">
+          <button className="nav-alert">
+            <AlertCircle size={20} />
+            <span className="alert-badge">3</span>
           </button>
         </div>
       </nav>
 
       <main className="main-content">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'communications' && <Communications />}
-        {activeTab === 'analytics' && <Analytics />}
+        {activeTab === 'dashboard' && renderDashboard()}
+        {activeTab === 'communications' && renderCommunications()}
+        {activeTab === 'analytics' && renderAnalytics()}
+
+        {/* ========== NEW COMPONENT RENDERS ADDED BELOW ========== */}
+        {activeTab === 'maintenance' && <PredictiveMaintenance />}
+        {activeTab === 'fuel' && <FuelOptimizer />}
+        {activeTab === 'sustainability' && <SustainabilityDashboard />}
+        {/* ========== END NEW COMPONENT RENDERS ========== */}
       </main>
+
+      <style jsx>{`
+        .app {
+          min-height: 100vh;
+          background: linear-gradient(135deg, #0a0e1a 0%, #141b2d 100%);
+        }
+
+        .navbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1rem 2rem;
+          background: rgba(26, 34, 53, 0.9);
+          backdrop-filter: blur(10px);
+          border-bottom: 1px solid #2a3553;
+        }
+
+        .nav-brand {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #00bcd4;
+        }
+
+        .nav-tabs {
+          display: flex;
+          gap: 0.5rem;
+        }
+
+        .nav-tab {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: transparent;
+          border: none;
+          color: #a8b2d1;
+          cursor: pointer;
+          border-radius: 8px;
+          transition: all 0.3s ease;
+          font-size: 0.95rem;
+        }
+
+        .nav-tab:hover {
+          background: rgba(0, 188, 212, 0.1);
+          color: #00bcd4;
+        }
+
+        .nav-tab.active {
+          background: rgba(0, 188, 212, 0.15);
+          color: #00bcd4;
+          font-weight: 600;
+        }
+
+        .nav-actions {
+          display: flex;
+          gap: 1rem;
+        }
+
+        .nav-alert {
+          position: relative;
+          padding: 0.5rem;
+          background: transparent;
+          border: 1px solid #2a3553;
+          border-radius: 8px;
+          color: #a8b2d1;
+          cursor: pointer;
+        }
+
+        .alert-badge {
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          background: #f44336;
+          color: white;
+          font-size: 0.7rem;
+          padding: 0.15rem 0.4rem;
+          border-radius: 10px;
+        }
+
+        .main-content {
+          padding: 2rem;
+          max-width: 1600px;
+          margin: 0 auto;
+        }
+
+        /* Dashboard Styles */
+        .dashboard-container {
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
+        }
+
+        .dashboard-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .dashboard-header h1 {
+          font-size: 2rem;
+          font-weight: 600;
+        }
+
+        .connection-status {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          background: rgba(26, 34, 53, 0.7);
+          border-radius: 20px;
+          font-size: 0.9rem;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        .status-dot.connected {
+          background: #4caf50;
+          animation: pulse 2s infinite;
+        }
+
+        .status-dot.disconnected {
+          background: #f44336;
+        }
+
+        .overview-cards {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 1.5rem;
+        }
+
+        .metric-card {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+          transition: all 0.3s ease;
+        }
+
+        .metric-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+          border-color: #00bcd4;
+        }
+
+        .metric-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+        }
+
+        .metric-header h3 {
+          font-size: 0.9rem;
+          color: #a8b2d1;
+          font-weight: 500;
+        }
+
+        .status-badge {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          padding: 0.25rem 0.75rem;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          font-weight: 600;
+        }
+
+        .status-normal {
+          background: rgba(76, 175, 80, 0.1);
+          color: #4caf50;
+        }
+
+        .status-warning {
+          background: rgba(255, 152, 0, 0.1);
+          color: #ff9800;
+        }
+
+        .status-critical {
+          background: rgba(244, 67, 54, 0.1);
+          color: #f44336;
+        }
+
+        .metric-value {
+          display: flex;
+          align-items: baseline;
+          gap: 0.5rem;
+          margin-bottom: 0.5rem;
+        }
+
+        .metric-value .value {
+          font-size: 2rem;
+          font-weight: 700;
+        }
+
+        .metric-value .unit {
+          font-size: 1rem;
+          color: #a8b2d1;
+        }
+
+        .metric-trend {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          color: #4caf50;
+          font-size: 0.9rem;
+        }
+
+        .units-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+          gap: 1.5rem;
+        }
+
+        .unit-card {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+        }
+
+        .unit-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1.5rem;
+        }
+
+        .unit-title {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .unit-title h2 {
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .unit-metrics {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .metric-row {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .metric-label {
+          flex: 0 0 120px;
+          font-size: 0.9rem;
+          color: #a8b2d1;
+        }
+
+        .metric-bar {
+          flex: 1;
+          height: 8px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .metric-bar-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.5s ease;
+        }
+
+        .metric-percentage {
+          flex: 0 0 50px;
+          text-align: right;
+          font-weight: 600;
+        }
+
+        .sensor-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 0.75rem;
+        }
+
+        .sensor-item {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          padding: 0.75rem;
+          background: rgba(20, 27, 45, 0.5);
+          border-radius: 8px;
+        }
+
+        .sensor-name {
+          font-size: 0.8rem;
+          color: #a8b2d1;
+          text-transform: capitalize;
+        }
+
+        .sensor-value {
+          font-size: 1rem;
+          font-weight: 600;
+        }
+
+        .sensor-value.anomaly {
+          color: #f44336;
+        }
+
+        /* Communications Styles */
+        .communications-container {
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
+        }
+
+        .comm-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .comm-header h1 {
+          font-size: 2rem;
+          font-weight: 600;
+        }
+
+        .comm-stats {
+          display: flex;
+          gap: 1.5rem;
+          font-size: 0.9rem;
+          color: #a8b2d1;
+        }
+
+        .critical-count {
+          color: #f44336;
+          font-weight: 600;
+        }
+
+        .comm-list {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          max-height: 70vh;
+          overflow-y: auto;
+        }
+
+        .comm-item {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+          animation: slideIn 0.3s ease;
+        }
+
+        .comm-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+        }
+
+        .comm-agents {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          font-weight: 600;
+        }
+
+        .agent-from {
+          color: #00bcd4;
+        }
+
+        .arrow {
+          color: #a8b2d1;
+        }
+
+        .agent-to {
+          color: #ff6b35;
+        }
+
+        .comm-meta {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .severity-badge {
+          padding: 0.25rem 0.75rem;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          color: white;
+          text-transform: uppercase;
+          font-weight: 600;
+        }
+
+        .timestamp {
+          color: #64748b;
+          font-size: 0.85rem;
+        }
+
+        .comm-message {
+          margin: 1rem 0;
+          line-height: 1.6;
+        }
+
+        .comm-action {
+          padding-top: 1rem;
+          border-top: 1px solid #2a3553;
+          color: #a8b2d1;
+        }
+
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1rem;
+          padding: 4rem;
+          color: #64748b;
+        }
+
+        /* Analytics Styles */
+        .analytics-container {
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
+        }
+
+        .analytics-header h1 {
+          font-size: 2rem;
+          font-weight: 600;
+          margin-bottom: 0.5rem;
+        }
+
+        .analytics-header p {
+          color: #a8b2d1;
+        }
+
+        .query-section {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+
+        .query-input-wrapper {
+          display: flex;
+          gap: 1rem;
+        }
+
+        .query-input {
+          flex: 1;
+          padding: 1rem 1.5rem;
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          color: #e0e6ed;
+          font-size: 1rem;
+        }
+
+        .query-input:focus {
+          outline: none;
+          border-color: #00bcd4;
+        }
+
+        .query-button {
+          padding: 1rem 2rem;
+          background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%);
+          border: none;
+          border-radius: 12px;
+          color: white;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .query-button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 5px 15px rgba(0, 188, 212, 0.3);
+        }
+
+        .query-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .query-suggestions {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .query-suggestions span {
+          color: #64748b;
+          font-size: 0.9rem;
+        }
+
+        .suggestion-chip {
+          padding: 0.5rem 1rem;
+          background: rgba(0, 188, 212, 0.1);
+          border: 1px solid rgba(0, 188, 212, 0.3);
+          border-radius: 20px;
+          color: #00bcd4;
+          font-size: 0.85rem;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .suggestion-chip:hover {
+          background: rgba(0, 188, 212, 0.2);
+          transform: translateY(-2px);
+        }
+
+        .response-section {
+          background: rgba(26, 34, 53, 0.7);
+          border: 1px solid #2a3553;
+          border-radius: 12px;
+          padding: 1.5rem;
+          animation: fadeIn 0.5s ease;
+        }
+
+        .response-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+          padding-bottom: 1rem;
+          border-bottom: 1px solid #2a3553;
+        }
+
+        .responding-agent {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          color: #00bcd4;
+          font-weight: 600;
+        }
+
+        .confidence {
+          color: #4caf50;
+          font-size: 0.9rem;
+          font-weight: 600;
+        }
+
+        .response-content {
+          line-height: 1.8;
+          white-space: pre-wrap;
+        }
+
+        @keyframes pulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+          }
+          70% {
+            box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+          }
+        }
+
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

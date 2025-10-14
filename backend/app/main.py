@@ -1,33 +1,26 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import asyncio
 import json
 from datetime import datetime, timedelta
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-import numpy as np
 
 from app.config import settings
-from app.models.database import Base, engine, get_db, SensorReading, AgentCommunication, ProcessOptimization, \
-    AsyncSessionLocal
+from app.models.database import Base, engine, get_db, SensorReading, AgentCommunication, AsyncSessionLocal
 from app.models.sensors import SensorData, UnitStatus, AnomalyAlert
 from app.models.agents import AnalyticsQuery, AnalyticsResponse, AgentState
 from app.services.data_simulator import simulator
 from app.services.ai_agents import agent_orchestrator
-from app.services.public_data_services import public_data_service
-from app.services.physics_informed_models import process_optimizer
-from app.services.alternative_fuel_optimizer import alternative_fuel_optimizer
-from app.services.gemini_service import gemini_service
 
-app = FastAPI(
-    title="Cement AI Optimizer - Enhanced Edition",
-    version="2.0.0",
-    description="AI-Driven Cement Plant Optimization Platform with Public Data Integration"
-)
+# ===== ADD THIS IMPORT =====
+from app.api.enhanced_endpoints import router as enhanced_router
 
-# CORS middleware
+# ===== CREATE APP FIRST =====
+app = FastAPI(title="Cement AI Optimizer", version="1.0.0")
+
+# ===== THEN ADD CORS MIDDLEWARE =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -35,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ===== THEN INCLUDE THE ENHANCED ROUTER =====
+app.include_router(enhanced_router, tags=["Enhanced Features"])
 
 
 # WebSocket connections manager
@@ -47,21 +43,14 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+        self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        dead_connections = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception as e:
-                print(f"Error broadcasting to connection: {e}")
-                dead_connections.append(connection)
-
-        # Clean up dead connections
-        for conn in dead_connections:
-            self.disconnect(conn)
+            except:
+                pass
 
 
 manager = ConnectionManager()
