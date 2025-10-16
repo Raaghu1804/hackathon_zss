@@ -1,7 +1,9 @@
+# backend/app/services/physics_informed_models.py - FIXED VERSION
+
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Any  # FIXED: Added Any import
+from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
 from scipy.optimize import minimize
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -260,12 +262,13 @@ class ProcessOptimizer:
         self.bayesian_optimizer = None
 
         # Define optimization bounds
+        # ===== FIXED: Removed residence_time from bounds =====
         self.bounds = {
             'kiln_temperature': (1350, 1500),
             'kiln_speed': (3.0, 5.0),
             'fuel_rate': (8, 15),
             'air_flow': (50, 120),
-            'residence_time': (25, 35),
+            # 'residence_time': (25, 35),  # REMOVED - not an actual sensor
             'feed_rate': (250, 350)
         }
 
@@ -281,10 +284,11 @@ class ProcessOptimizer:
         )
 
         # Quality component
+        # ===== FIXED: Use kiln_speed and feed_rate instead of residence_time =====
         quality_score = self._calculate_quality_score(
             params['kiln_temperature'],
-            params['residence_time'],
-            params['kiln_speed']
+            params['kiln_speed'],
+            params['feed_rate']
         )
 
         # Environmental component (using public data)
@@ -317,18 +321,19 @@ class ProcessOptimizer:
 
         return (temp_efficiency + fuel_efficiency + ratio_efficiency) / 3
 
-    def _calculate_quality_score(self, temp: float, residence_time: float, kiln_speed: float) -> float:
+    def _calculate_quality_score(self, temp: float, kiln_speed: float, feed_rate: float) -> float:
         """Calculate clinker quality score"""
+        # ===== FIXED: Replaced residence_time with feed_rate =====
         # Temperature quality (optimal around 1450°C)
         temp_quality = 1 - abs(temp - 1450) / 100
 
-        # Residence time quality (optimal around 30 minutes)
-        time_quality = 1 - abs(residence_time - 30) / 10
+        # Feed rate quality (optimal around 300 t/h)
+        feed_quality = 1 - abs(feed_rate - 300) / 100
 
         # Kiln speed quality (optimal around 4 rpm)
         speed_quality = 1 - abs(kiln_speed - 4) / 2
 
-        return (temp_quality + time_quality + speed_quality) / 3
+        return (temp_quality + feed_quality + speed_quality) / 3
 
     def _calculate_environmental_score(self, fuel_rate: float,
                                        alt_fuels: Dict[str, Any]) -> float:
@@ -368,8 +373,7 @@ class ProcessOptimizer:
             current_objective = self.objective_function(current_params, public_data)
             improvements = {
                 'expected_improvement': objective_value - current_objective,
-                'percentage_improvement': ((
-                                                       objective_value - current_objective) / current_objective * 100) if current_objective != 0 else 0
+                'percentage_improvement': ((objective_value - current_objective) / current_objective * 100) if current_objective != 0 else 0
             }
 
         return {

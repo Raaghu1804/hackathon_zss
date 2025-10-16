@@ -1,3 +1,5 @@
+# backend/app/config.py - FIXED VERSION
+
 import os
 from pydantic_settings import BaseSettings
 from typing import Optional, Dict, List, ClassVar
@@ -92,8 +94,8 @@ class Settings(BaseSettings):
         "fuel_flow": {"min": 8, "max": 12, "optimal": 10, "unit": "t/h"},
         "feed_rate": {"min": 250, "max": 350, "optimal": 300, "unit": "t/h"},
         "tertiary_air_temp": {"min": 600, "max": 900, "optimal": 750, "unit": "°C"},
-        "calcination_degree": {"min": 85, "max": 95, "optimal": 92, "unit": "%"},
-        "residence_time": {"min": 3, "max": 7, "optimal": 5, "unit": "seconds"}
+        "calcination_degree": {"min": 85, "max": 95, "optimal": 92, "unit": "%"}
+        # ===== REMOVED: "residence_time" - not an actual sensor =====
     }
 
     ROTARY_KILN_RANGES: ClassVar[Dict] = {
@@ -106,9 +108,8 @@ class Settings(BaseSettings):
         "kiln_speed": {"min": 3.0, "max": 5.0, "optimal": 4.0, "unit": "rpm"},
         "fuel_rate": {"min": 10, "max": 15, "optimal": 12.5, "unit": "t/h"},
         "clinker_exit_temp": {"min": 1100, "max": 1300, "optimal": 1200, "unit": "°C"},
-        "secondary_air_temp": {"min": 600, "max": 1000, "optimal": 800, "unit": "°C"},
-        "flame_length": {"min": 5, "max": 8, "optimal": 6.5, "unit": "D"},
-        "coating_thickness": {"min": 200, "max": 400, "optimal": 300, "unit": "mm"}
+        "secondary_air_temp": {"min": 600, "max": 1000, "optimal": 800, "unit": "°C"}
+        # ===== REMOVED: "flame_length" and "coating_thickness" - not actual sensors =====
     }
 
     CLINKER_COOLER_RANGES: ClassVar[Dict] = {
@@ -120,8 +121,8 @@ class Settings(BaseSettings):
         "undergrate_pressure": {"min": 40, "max": 80, "optimal": 60, "unit": "mbar"},
         "cooling_air_flow": {"min": 2.3, "max": 3.3, "optimal": 2.8, "unit": "kg/kg"},
         "bed_height": {"min": 500, "max": 800, "optimal": 650, "unit": "mm"},
-        "cooler_efficiency": {"min": 75, "max": 85, "optimal": 80, "unit": "%"},
-        "heat_recovery": {"min": 60, "max": 75, "optimal": 70, "unit": "%"}
+        "cooler_efficiency": {"min": 75, "max": 85, "optimal": 80, "unit": "%"}
+        # ===== REMOVED: "heat_recovery" - not an actual sensor, calculated from efficiency =====
     }
 
     # Alternative Fuel Configuration

@@ -66,6 +66,7 @@ const MetricCard = ({ title, value, unit, trend, status }) => {
 };
 
 // Unit Status Card Component
+// Fixed UnitStatusCard Component
 const UnitStatusCard = ({ unit, data }) => {
   const getUnitIcon = (unitName) => {
     switch(unitName) {
@@ -77,6 +78,7 @@ const UnitStatusCard = ({ unit, data }) => {
   };
 
   const formatUnitName = (name) => {
+    if (!name) return 'Unknown Unit';
     return name.split('_').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
@@ -125,16 +127,30 @@ const UnitStatusCard = ({ unit, data }) => {
         </div>
       </div>
 
-      {data?.sensors && (
+      {data?.sensors && Array.isArray(data.sensors) && (
         <div className="sensor-grid">
-          {data.sensors.slice(0, 4).map((sensor, idx) => (
-            <div key={idx} className="sensor-item">
-              <span className="sensor-name">{sensor.sensor_name.replace(/_/g, ' ')}</span>
-              <span className={`sensor-value ${sensor.is_anomaly ? 'anomaly' : ''}`}>
-                {sensor.value.toFixed(2)} {sensor.unit_measure}
-              </span>
-            </div>
-          ))}
+          {data.sensors.slice(0, 4).map((sensor, idx) => {
+            // Add safety checks for sensor object and its properties
+            if (!sensor || typeof sensor !== 'object') {
+              return null;
+            }
+
+            const sensorName = sensor.sensor_name || 'Unknown Sensor';
+            const sensorValue = sensor.value !== undefined ? sensor.value : 'N/A';
+            const unitMeasure = sensor.unit_measure || '';
+            const isAnomaly = sensor.is_anomaly || false;
+
+            return (
+              <div key={idx} className="sensor-item">
+                <span className="sensor-name">
+                  {sensorName.replace(/_/g, ' ')}
+                </span>
+                <span className={`sensor-value ${isAnomaly ? 'anomaly' : ''}`}>
+                  {sensorValue} {unitMeasure}
+                </span>
+              </div>
+            );
+          }).filter(Boolean)} {/* Remove any null entries */}
         </div>
       )}
     </div>

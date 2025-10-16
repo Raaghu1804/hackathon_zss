@@ -1,4 +1,4 @@
-# backend/app/services/data_simulator.py
+# backend/app/services/data_simulator.py - FIXED VERSION
 
 import asyncio
 import random
@@ -29,8 +29,7 @@ class DataSimulator:
             'fuel_flow': 10,
             'feed_rate': 300,
             'tertiary_air_temp': 750,
-            'calcination_degree': 90,
-            'residence_time': 5  # FIXED: Added missing residence_time
+            'calcination_degree': 90
         }
 
         # Rotary kiln sensors
@@ -44,9 +43,7 @@ class DataSimulator:
             'kiln_speed': 4.0,
             'fuel_rate': 12.5,
             'clinker_exit_temp': 1200,
-            'secondary_air_temp': 800,
-            'flame_length': 6.5,  # FIXED: Added missing flame_length
-            'coating_thickness': 300  # FIXED: Added missing coating_thickness
+            'secondary_air_temp': 800
         }
 
         # Clinker cooler sensors
@@ -59,8 +56,7 @@ class DataSimulator:
             'undergrate_pressure': 60,
             'cooling_air_flow': 2.8,
             'bed_height': 650,
-            'cooler_efficiency': 80,
-            'heat_recovery': 70  # FIXED: Added missing heat_recovery
+            'cooler_efficiency': 80
         }
 
     def generate_sensor_reading(self, unit: str, sensor_name: str) -> Tuple[float, bool]:
@@ -82,12 +78,10 @@ class DataSimulator:
         else:
             # Normal variation
             variation = 0.02  # 2% normal variation
-
-            # FIXED: Ensure scale (standard deviation) is always positive
+            # Fix: Use absolute value to ensure scale is positive
             scale = abs(current_value * variation)
-            if scale < 0.01:  # Minimum scale to avoid zero
-                scale = 0.01
-
+            if scale == 0:
+                scale = 0.1  # Minimum scale to avoid zero
             noise = np.random.normal(0, scale)
             new_value = current_value + noise
 
@@ -141,7 +135,7 @@ class DataSimulator:
                     session.add(db_reading)
                 await session.commit()
         except Exception as e:
-            print(f"Error storing readings: {e}")
+            print(f"⚠️ Error storing readings: {e}")
 
     def detect_anomalies(self, readings: List[SensorData]) -> List[AnomalyAlert]:
         """Detect anomalies in sensor readings"""
@@ -149,6 +143,20 @@ class DataSimulator:
 
         for reading in readings:
             if reading.is_anomaly:
+                # Ensure optimal_range is not None
+                if reading.optimal_range is None:
+                    # Get ranges from config if not provided
+                    try:
+                        ranges = getattr(settings, f"{reading.unit.upper()}_RANGES")
+                        sensor_range = ranges.get(reading.sensor_name, {})
+                        reading.optimal_range = {
+                            'min': sensor_range.get('min', 0),
+                            'max': sensor_range.get('max', 100)
+                        }
+                    except:
+                        # Fallback range
+                        reading.optimal_range = {'min': 0, 'max': 100}
+
                 severity = self.calculate_severity(reading)
                 action = self.suggest_action(reading)
 
@@ -174,9 +182,9 @@ class DataSimulator:
 
         # Calculate deviation percentage
         if value < min_val:
-            deviation = (min_val - value) / min_val if min_val != 0 else 1.0
+            deviation = (min_val - value) / min_val if min_val != 0 else 0
         elif value > max_val:
-            deviation = (value - max_val) / max_val if max_val != 0 else 1.0
+            deviation = (value - max_val) / max_val if max_val != 0 else 0
         else:
             return "low"
 
@@ -236,7 +244,7 @@ class DataSimulator:
                 await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
             except Exception as e:
-                print(f"Error in data simulation: {e}")
+                print(f"⚠️ Error in data simulation: {e}")
                 await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
     def stop_simulation(self):

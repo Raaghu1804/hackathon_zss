@@ -80,112 +80,70 @@ async def startup_event():
     print("✅ Sensor broadcast started")
 
 
+# Replace the broadcast_sensor_data function in your main.py with this fixed version
+
 async def broadcast_sensor_data():
-    """Broadcast sensor data to all WebSocket clients"""
-    print("📡 Starting sensor data broadcast loop...")
-
-    await asyncio.sleep(2)  # Initial delay for system to initialize
-
+    """Broadcast sensor data to all connected clients"""
     while True:
         try:
+            # Get latest sensor readings
             async with AsyncSessionLocal() as session:
-                # Get latest readings from each unit
+                # Get readings from last 5 seconds
+                cutoff_time = datetime.utcnow() - timedelta(seconds=5)
                 result = await session.execute(
-                    select(SensorReading)
-                    .order_by(SensorReading.timestamp.desc())
-                    .limit(300)
+                    select(SensorReading).where(SensorReading.timestamp >= cutoff_time)
                 )
                 readings = result.scalars().all()
 
-                if not readings:
-                    print("⚠️ No sensor readings found, waiting...")
-                    await asyncio.sleep(settings.SIMULATION_INTERVAL)
-                    continue
+                if readings:
+                    # Group by unit
+                    units_data = {}
+                    for reading in readings:
+                        if reading.unit not in units_data:
+                            units_data[reading.unit] = []
 
-                # Group by unit
-                units_data = {}
-                for reading in readings:
-                    if reading.unit not in units_data:
-                        units_data[reading.unit] = []
+                        sensor_data = SensorData(
+                            unit=reading.unit,
+                            sensor_name=reading.sensor_name,
+                            value=reading.value,
+                            unit_measure=reading.unit_measure,
+                            timestamp=reading.timestamp,
+                            is_anomaly=reading.is_anomaly
+                        )
+                        units_data[reading.unit].append(sensor_data)
 
-                    sensor_data = SensorData(
-                        unit=reading.unit,
-                        sensor_name=reading.sensor_name,
-                        value=reading.value,
-                        unit_measure=reading.unit_measure,
-                        timestamp=reading.timestamp,
-                        is_anomaly=reading.is_anomaly
-                    )
-                    units_data[reading.unit].append(sensor_data)
+                    # Process through AI agents and detect anomalies
+                    anomalies = []
+                    for unit, data in units_data.items():
+                        try:
+                            # Use process_sensor_data instead of process_with_public_data
+                            analysis = await agent_orchestrator.process_sensor_data(unit, data)
 
-                # Process through enhanced AI agents with public data
-                anomalies = []
-                optimization_suggestions = []
+                            # Check for anomalies
+                            unit_anomalies = simulator.detect_anomalies(data)
+                            if unit_anomalies:
+                                anomalies.extend(unit_anomalies)
+                                # Handle through agents
+                                await agent_orchestrator.handle_anomalies(unit_anomalies)
+                        except Exception as e:
+                            print(f"⚠️ Error processing unit {unit}: {e}")
+                            continue
 
-                for unit, data in units_data.items():
-                    try:
-                        # Process with public data context
-                        analysis = await agent_orchestrator.process_with_public_data(unit, data)
-
-                        # Check for anomalies
-                        unit_anomalies = simulator.detect_anomalies(data)
-                        if unit_anomalies:
-                            anomalies.extend(unit_anomalies)
-
-                            # Get public data for context
-                            plant_config = settings.PLANT_CONFIGS[0] if settings.PLANT_CONFIGS else {}
-                            public_data = await public_data_service.aggregate_public_data(plant_config)
-
-                            # Handle through agents with context
-                            responses = await agent_orchestrator.handle_anomalies(unit_anomalies)
-
-                            # Add optimization suggestions
-                            if analysis.get('optimization'):
-                                optimization_suggestions.append({
-                                    'unit': unit,
-                                    'suggestions': analysis['optimization']
-                                })
-                    except Exception as e:
-                        print(f"⚠️ Error processing unit {unit}: {e}")
-                        continue
-
-                # Convert all Pydantic models to JSON-safe dicts
-                sensor_data_json = {}
-                for unit, sensors in units_data.items():
-                    sensor_data_json[unit] = []
-                    for s in sensors:
-                        data = s.dict()
-                        # Convert datetime to ISO string
-                        if 'timestamp' in data and isinstance(data['timestamp'], datetime):
-                            data['timestamp'] = data['timestamp'].isoformat()
-                        sensor_data_json[unit].append(data)
-
-                anomalies_json = []
-                if anomalies:
-                    for a in anomalies:
-                        data = a.dict()
-                        # Convert datetime to ISO string
-                        if 'timestamp' in data and isinstance(data['timestamp'], datetime):
-                            data['timestamp'] = data['timestamp'].isoformat()
-                        anomalies_json.append(data)
-
-                # Broadcast to WebSocket clients
-                if manager.active_connections:
+                    # Broadcast to WebSocket clients
                     await manager.broadcast({
                         "type": "sensor_update",
                         "timestamp": datetime.utcnow().isoformat(),
-                        "data": sensor_data_json,
-                        "anomalies": anomalies_json,
-                        "optimizations": optimization_suggestions
+                        "data": {
+                            unit: [s.dict() for s in sensors]
+                            for unit, sensors in units_data.items()
+                        },
+                        "anomalies": [a.dict() for a in anomalies] if anomalies else []
                     })
-                    print(f"📊 Broadcasted data to {len(manager.active_connections)} clients")
 
             await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
         except Exception as e:
             print(f"❌ Error in broadcast task: {e}")
-            import traceback
-            traceback.print_exc()
             await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
 
