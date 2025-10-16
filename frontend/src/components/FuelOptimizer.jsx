@@ -788,16 +788,4 @@ const FuelOptimizer = () => {
   );
 };
 
-export default FuelOptimizer;-value">${optimization.economics.baseline_cost_usd.toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <div className="comparison-row">
-                      <span className="row-label">Optimized</span>
-                      <div className="bar-container">
-                        <div
-                          className="bar optimized"
-                          style={{
-                            width: `${(optimization.economics.total_cost_usd / optimization.economics.baseline_cost_usd) * 100}%`
-                          }}
-                        />
-                        <span className="bar
+export default FuelOptimizer;
