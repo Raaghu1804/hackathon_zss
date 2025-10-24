@@ -1,63 +1,106 @@
 from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
+import json
 
 
-def get_nerd_joke(topic: str, tool_context: ToolContext) -> dict:
-    """Get a nerdy joke about a specific topic."""
-    print(f"--- Tool: get_nerd_joke called for topic: {topic} ---")
+def analyze_kiln_parameters(
+    kiln_temp: float,
+    feed_rate: float,
+    fuel_rate: float,
+    other_recommendations: str,
+    tool_context: ToolContext,
+) -> dict:
+    """Analyze rotary kiln parameters and provide optimization recommendations."""
+    print(f"--- Tool: analyze_kiln_parameters called ---")
+    print(f"Current: temp={kiln_temp}, feed={feed_rate}, fuel={fuel_rate}")
 
-    # Example jokes - in a real implementation, you might want to use an API
-    jokes = {
-        "python": "Why don't Python programmers like to use inheritance? Because they don't like to inherit anything!",
-        "javascript": "Why did the JavaScript developer go broke? Because he used up all his cache!",
-        "java": "Why do Java developers wear glasses? Because they can't C#!",
-        "programming": "Why do programmers prefer dark mode? Because light attracts bugs!",
-        "math": "Why was the equal sign so humble? Because he knew he wasn't less than or greater than anyone else!",
-        "physics": "Why did the photon check a hotel? Because it was travelling light!",
-        "chemistry": "Why did the acid go to the gym? To become a buffer solution!",
-        "biology": "Why did the cell go to therapy? Because it had too many issues!",
-        "default": "Why did the computer go to the doctor? Because it had a virus!",
+    # Store current readings in state
+    tool_context.state["last_kiln_reading"] = {
+        "kiln_temp": kiln_temp,
+        "feed_rate": feed_rate,
+        "fuel_rate": fuel_rate,
     }
 
-    joke = jokes.get(topic.lower(), jokes["default"])
+    # Parse other recommendations if provided
+    try:
+        other_recs = json.loads(other_recommendations) if other_recommendations else {}
+    except:
+        other_recs = {}
 
-    # Update state with the last joke topic
-    tool_context.state["last_joke_topic"] = topic
+    # Basic analysis logic
+    analysis = {
+        "status": "success",
+        "current_readings": {
+            "kiln_temp": kiln_temp,
+            "feed_rate": feed_rate,
+            "fuel_rate": fuel_rate,
+        },
+        "other_agent_recommendations": other_recs,
+    }
 
-    return {"status": "success", "joke": joke, "topic": topic}
+    return analysis
 
 
-# Create the funny nerd agent
+def set_kiln_targets(
+    target_kiln_temp: float,
+    target_fuel_rate: float,
+    target_rotation_speed: float,
+    tool_context: ToolContext,
+) -> dict:
+    """Set target parameters for the rotary kiln."""
+    print(f"--- Tool: set_kiln_targets called ---")
+    print(
+        f"Targets: temp={target_kiln_temp}, fuel={target_fuel_rate}, rotation={target_rotation_speed}"
+    )
+
+    targets = {
+        "target_kiln_temp": target_kiln_temp,
+        "target_fuel_rate": target_fuel_rate,
+        "target_rotation_speed": target_rotation_speed,
+    }
+
+    # Store targets in state
+    tool_context.state["kiln_targets"] = targets
+
+    return {"status": "success", "targets": targets}
+
+
+# Create the rotary kiln agent
 rotary_kiln_agent = Agent(
     name="rotary_kiln_agent",
     model="gemini-2.0-flash",
-    description="An agent that tells nerdy jokes about various topics.",
+    description="Controls rotary kiln for clinker production, optimizing temperature, fuel rate, and rotation speed.",
     instruction="""
-    You are a funny nerd agent that tells nerdy jokes about various topics.
-    
-    When asked to tell a joke:
-    1. Use the get_nerd_joke tool to fetch a joke about the requested topic
-    2. If no specific topic is mentioned, ask the user what kind of nerdy joke they'd like to hear
-    3. Format the response to include both the joke and a brief explanation if needed
-    
-    Available topics include:
-    - python
-    - javascript
-    - java
-    - programming
-    - math
-    - physics
-    - chemistry
-    - biology
-    
-    Example response format:
-    "Here's a nerdy joke about <TOPIC>:
-    <JOKE>
-    
-    Explanation: {brief explanation if needed}"
+    You are the RotaryKilnAgent responsible for controlling the rotary kiln in the burning zone.
+    Your primary objectives are:
+    1. Maintain optimal clinker quality
+    2. Maximize energy efficiency
+    3. Coordinate with other agents (PreCalcinerAgent and ClinkerCoolerAgent)
 
-    If the user asks about anything else, 
-    you should delegate the task to the manager agent.
+    When analyzing kiln parameters:
+    1. Use analyze_kiln_parameters to review current sensor data and recommendations from other agents
+    2. Consider the interdependencies:
+       - Pre-calciner outputs affect your feed quality
+       - Your output temperature affects cooler operations
+    3. Use set_kiln_targets to output your recommended target parameters
+
+    Target Parameter Guidelines:
+    - target_kiln_temp: Optimal range 1400-1500°C (clinker formation zone)
+    - target_fuel_rate: Adjust based on feed rate and desired temperature
+    - target_rotation_speed: Typically 2.5-4.0 RPM for optimal residence time
+
+    Output ONLY numeric targets as JSON:
+    {
+      "target_kiln_temp": <value>,
+      "target_fuel_rate": <value>,
+      "target_rotation_speed": <value>
+    }
+
+    Optimization priorities:
+    - Reduce fuel consumption while maintaining quality
+    - Respond to pre-calciner temperature changes
+    - Coordinate with cooler for heat recovery
+    - Detect anomalies and alert manager agent
     """,
-    tools=[get_nerd_joke],
+    tools=[analyze_kiln_parameters, set_kiln_targets],
 )
