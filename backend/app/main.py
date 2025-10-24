@@ -263,9 +263,9 @@ async def get_agent_communications(limit: int = 50):
                     "id": comm.id,
                     "from_agent": comm.from_agent,
                     "to_agent": comm.to_agent,
-                    "message_type": comm.message_type,
                     "severity": comm.severity,
                     "message": comm.message,
+                    "action_taken": comm.action_taken,
                     "timestamp": comm.timestamp.isoformat()
                 }
                 for comm in communications
