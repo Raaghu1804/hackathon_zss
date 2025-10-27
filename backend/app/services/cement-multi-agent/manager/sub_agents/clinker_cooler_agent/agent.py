@@ -1,26 +1,44 @@
 from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
 import json
+from google.adk.tools.agent_tool import AgentTool
+# from ...tools.tools import root_agent
+from ..retriever_agent.agent import retriever_agent
+
+
 
 
 def analyze_cooler_parameters(
-    clinker_temp: float,
-    air_pressure: float,
+    inlet_temp: float,
+    outlet_temp: float,
+    secondary_air_temp: float,
+    tertiary_air_temp: float,
     grate_speed: float,
+    undergrate_pressure: float,
+    cooling_air_flow: float,
+    bed_height: float,
+    cooler_efficiency: float,
     other_recommendations: str,
     tool_context: ToolContext,
 ) -> dict:
     """Analyze clinker cooler parameters and provide optimization recommendations."""
     print(f"--- Tool: analyze_cooler_parameters called ---")
-    print(
-        f"Current: clinker_temp={clinker_temp}, air_pressure={air_pressure}, grate_speed={grate_speed}"
-    )
+    print(f"Inlet: {inlet_temp}°C, Outlet: {outlet_temp}°C")
+    print(f"Secondary Air: {secondary_air_temp}°C, Tertiary Air: {tertiary_air_temp}°C")
+    print(f"Grate Speed: {grate_speed} strokes/min, Pressure: {undergrate_pressure} mbar")
+    print(f"Air Flow: {cooling_air_flow} kg/kg, Bed: {bed_height} mm, Efficiency: {cooler_efficiency}%")
 
     # Store current readings in state
     tool_context.state["last_cooler_reading"] = {
-        "clinker_temp": clinker_temp,
-        "air_pressure": air_pressure,
+        "inlet_temp": inlet_temp,
+        "outlet_temp": outlet_temp,
+        "secondary_air_temp": secondary_air_temp,
+        "tertiary_air_temp": tertiary_air_temp,
         "grate_speed": grate_speed,
+        "undergrate_pressure": undergrate_pressure,
+        "cooling_air_flow": cooling_air_flow,
+        "bed_height": bed_height,
+        "cooler_efficiency": cooler_efficiency,
     }
 
     # Parse other recommendations if provided
@@ -29,13 +47,19 @@ def analyze_cooler_parameters(
     except:
         other_recs = {}
 
-    # Basic analysis logic
+    # Analysis with all comprehensive parameters
     analysis = {
         "status": "success",
         "current_readings": {
-            "clinker_temp": clinker_temp,
-            "air_pressure": air_pressure,
+            "inlet_temp": inlet_temp,
+            "outlet_temp": outlet_temp,
+            "secondary_air_temp": secondary_air_temp,
+            "tertiary_air_temp": tertiary_air_temp,
             "grate_speed": grate_speed,
+            "undergrate_pressure": undergrate_pressure,
+            "cooling_air_flow": cooling_air_flow,
+            "bed_height": bed_height,
+            "cooler_efficiency": cooler_efficiency,
         },
         "other_agent_recommendations": other_recs,
     }
@@ -44,20 +68,17 @@ def analyze_cooler_parameters(
 
 
 def set_cooler_targets(
-    target_air_pressure: float,
-    target_grate_speed: float,
+    targets_json: str,
     tool_context: ToolContext,
 ) -> dict:
-    """Set target parameters for the clinker cooler."""
+    """Set target parameters for the clinker cooler. Accepts flexible JSON targets."""
     print(f"--- Tool: set_cooler_targets called ---")
-    print(
-        f"Targets: air_pressure={target_air_pressure}, grate_speed={target_grate_speed}"
-    )
 
-    targets = {
-        "target_air_pressure": target_air_pressure,
-        "target_grate_speed": target_grate_speed,
-    }
+    try:
+        targets = json.loads(targets_json) if targets_json else {}
+        print(f"Targets: {json.dumps(targets, indent=2)}")
+    except:
+        return {"status": "error", "message": "Failed to parse targets JSON"}
 
     # Store targets in state
     tool_context.state["cooler_targets"] = targets
@@ -69,38 +90,74 @@ def set_cooler_targets(
 clinker_cooler_agent = Agent(
     name="clinker_cooler_agent",
     model="gemini-2.0-flash",
-    description="Controls clinker cooler air pressure and grate speed for optimal cooling and heat recovery.",
+    description="Controls clinker cooler for optimal cooling, heat recovery, and energy efficiency.",
     instruction="""
     You are the ClinkerCoolerAgent responsible for controlling the clinker cooling process.
-    Your primary objectives are:
-    1. Cool clinker efficiently to safe handling temperature (< 100°C)
-    2. Maximize heat recovery for use in pre-heater/calciner
-    3. Avoid thermal shock and overcooling (preserves clinker quality)
-    4. Coordinate with RotaryKilnAgent and PreCalcinerAgent
 
-    When analyzing cooler parameters:
-    1. Use analyze_cooler_parameters to review current sensor data and recommendations from other agents
-    2. Consider the interdependencies:
-       - Kiln output temperature and production rate affect your cooling load
-       - Recovered heat can be used in pre-calciner (energy efficiency)
-    3. Use set_cooler_targets to output your recommended target parameters
+    PRIMARY OBJECTIVES:
+    1. Cool clinker efficiently to safe handling temperature (100-150°C outlet)
+    2. Maximize heat recovery (secondary and tertiary air to kiln/calciner)
+    3. Prevent thermal shock (gradual cooling preserves clinker quality)
+    4. Optimize cooler efficiency (75-85%)
+    5. Coordinate with RotaryKilnAgent and PreCalcinerAgent
 
-    Target Parameter Guidelines:
-    - target_air_pressure: 150-200 kPa for effective cooling
-    - target_grate_speed: 1.5-3.0 m/min based on clinker flow rate
+    COMPREHENSIVE PARAMETERS TO ANALYZE (9 parameters):
 
-    Output ONLY numeric targets as JSON:
+    You receive ALL of the following parameters:
+    - inlet_temp: Clinker inlet temperature from kiln (Optimal: 1100-1300°C)
+    - outlet_temp: Clinker outlet temperature (Optimal: 100-150°C)
+    - secondary_air_temp: Hot air to kiln (Optimal: 600-1000°C)
+    - tertiary_air_temp: Hot air to pre-calciner (Optimal: 600-900°C)
+    - grate_speed: Grate movement rate (Optimal: 10-30 strokes/min)
+    - undergrate_pressure: Air pressure under grate (Optimal: 40-80 mbar)
+    - cooling_air_flow: Air-to-clinker ratio (Optimal: 2.3-3.3 kg/kg)
+    - bed_height: Clinker bed depth (Optimal: 500-800 mm)
+    - cooler_efficiency: Heat recovery efficiency (Target: 75-85%)
+
+    WHEN ANALYZING:
+    1. Use analyze_cooler_parameters with ALL 9 parameters
+    2. Review other agents' recommendations
+    3. Consider manager's refined targets (if provided)
+    4. Use retrieve_rag_documentation if you need to reference cement manufacturing best practices or technical documentation
+    5. Analyze interdependencies:
+       - Inlet temp from kiln affects cooling load
+       - Secondary air temp impacts kiln fuel efficiency
+       - Tertiary air temp impacts calciner fuel efficiency
+       - Grate speed affects bed height and cooling time
+       - Undergrate pressure affects air distribution
+       - Cooling air flow determines heat recovery vs. clinker cooling
+
+    INTELLIGENT DECISION MAKING:
+    **PRIMARY APPROACH**: Use retrieve_rag_documentation to query cement manufacturing best practices and optimization strategies. Ask questions like:
+    - "What are optimal clinker cooler operating parameters?"
+    - "How to maximize heat recovery in clinker coolers?"
+    - "Best practices for cooler efficiency optimization"
+    - "Troubleshooting high bed height in coolers"
+    - "Optimal air flow strategies for cooling"
+
+    Based on RAG documentation guidance:
+    - Identify which parameters need adjustment
+    - Decide which parameters are controllable vs. monitored
+    - Determine optimal target values per documentation
+    - Balance competing objectives (cooling vs. heat recovery)
+    - Detect anomalies and apply documented solutions
+
+    OUTPUT YOUR TARGETS:
+    Use set_cooler_targets with a JSON string containing your recommended targets.
+    Base your decisions on RAG documentation and current conditions.
+
+    Example output format:
     {
-      "target_air_pressure": <value>,
-      "target_grate_speed": <value>
+      "target_grate_speed": 18,
+      "target_cooling_air_flow": 2.8,
+      "target_undergrate_pressure": 60,
+      "target_secondary_air_temp": 850,
+      "target_tertiary_air_temp": 780,
+      "optimization_notes": "Applied strategy from documentation section 4.2: increased air flow for heat recovery",
+      "rag_references": "Cooler Best Practices Manual, Heat Recovery Guidelines"
     }
 
-    Optimization priorities:
-    - Maintain clinker exit temperature < 100°C
-    - Maximize heat recovery (hot air to calciner)
-    - Prevent thermal shock (gradual cooling)
-    - Adjust to varying kiln production rates
-    - Detect anomalies and alert manager agent
+    **RAG-DRIVEN OPTIMIZATION**: Query documentation for optimization priorities instead of following hardcoded rules. The documentation will guide you on parameters, targets, and control strategies specific to your plant configuration.
     """,
-    tools=[analyze_cooler_parameters, set_cooler_targets],
+    tools=[analyze_cooler_parameters, set_cooler_targets, AgentTool(retriever_agent)],
 )

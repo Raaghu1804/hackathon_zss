@@ -7,6 +7,7 @@ from .sub_agents.rotary_kiln_agent.agent import rotary_kiln_agent
 from .sub_agents.clinker_cooler_agent.agent import clinker_cooler_agent
 from .sub_agents.pre_calciner_agent.agent import pre_calciner_agent
 from .tools.tools import get_current_time
+from .sub_agents.retriever_agent.agent import retriever_agent
 
 
 def review_all_agent_outputs(
@@ -86,7 +87,7 @@ def detect_system_anomalies(
     sensor_data: str,
     tool_context: ToolContext,
 ) -> dict:
-    """Detect anomalies across the entire clinkerization system."""
+    """Detect anomalies across the entire clinkerization system with all comprehensive parameters."""
     print("--- Tool: detect_system_anomalies called ---")
 
     try:
@@ -96,22 +97,87 @@ def detect_system_anomalies(
 
     anomalies = []
 
-    # Basic anomaly detection logic (can be enhanced)
+    # ROTARY KILN Anomaly Detection (10 parameters)
     kiln_data = sensors.get("rotary_kiln", {})
-    if kiln_data.get("kiln_temp", 0) > 1550:
-        anomalies.append("CRITICAL: Kiln temperature exceeds safe limit (>1550°C)")
-    elif kiln_data.get("kiln_temp", 0) < 1350:
-        anomalies.append("WARNING: Kiln temperature too low for optimal clinker quality")
+    if kiln_data.get("burning_zone_temp", 0) > 1500:
+        anomalies.append("CRITICAL: Kiln burning zone temp exceeds safe limit (>1500°C)")
+    elif kiln_data.get("burning_zone_temp", 0) < 1400:
+        anomalies.append("WARNING: Kiln burning zone temp too low (<1400°C)")
 
+    if kiln_data.get("back_end_temp", 0) > 1200:
+        anomalies.append("WARNING: Kiln back-end temp too high (>1200°C)")
+    elif kiln_data.get("back_end_temp", 0) < 800:
+        anomalies.append("WARNING: Kiln back-end temp too low (<800°C)")
+
+    if kiln_data.get("shell_temp", 0) > 350:
+        anomalies.append("WARNING: Kiln shell temp high - possible coating loss (>350°C)")
+    elif kiln_data.get("shell_temp", 0) < 200:
+        anomalies.append("INFO: Kiln shell temp low (<200°C)")
+
+    if kiln_data.get("oxygen_level", 0) > 3.0:
+        anomalies.append("WARNING: Excess O2 in kiln - fuel inefficiency (>3%)")
+    elif kiln_data.get("oxygen_level", 0) < 1.0:
+        anomalies.append("CRITICAL: Low O2 in kiln - incomplete combustion (<1%)")
+
+    if kiln_data.get("co_level", 0) > 0.05:
+        anomalies.append("CRITICAL: High CO in kiln - incomplete combustion (>0.05%)")
+
+    if kiln_data.get("nox_level", 0) > 1200:
+        anomalies.append("WARNING: High NOx emissions from kiln (>1200 mg/Nm³)")
+
+    # PRE-CALCINER Anomaly Detection (9 parameters)
     calciner_data = sensors.get("pre_calciner", {})
-    if calciner_data.get("o2_concentration", 0) > 7:
-        anomalies.append("WARNING: Excess oxygen in calciner (fuel inefficiency)")
-    elif calciner_data.get("o2_concentration", 0) < 2:
-        anomalies.append("CRITICAL: Low oxygen - incomplete combustion risk")
+    if calciner_data.get("temperature", 0) > 900:
+        anomalies.append("WARNING: Calciner temp too high (>900°C)")
+    elif calciner_data.get("temperature", 0) < 820:
+        anomalies.append("WARNING: Calciner temp too low (<820°C)")
 
+    if calciner_data.get("pressure", 0) > -2:
+        anomalies.append("WARNING: Calciner pressure high (draft issue)")
+    elif calciner_data.get("pressure", 0) < -5:
+        anomalies.append("WARNING: Calciner pressure too low (excessive draft)")
+
+    if calciner_data.get("oxygen_level", 0) > 4.0:
+        anomalies.append("WARNING: Excess O2 in calciner (>4%)")
+    elif calciner_data.get("oxygen_level", 0) < 2.0:
+        anomalies.append("CRITICAL: Low O2 in calciner (<2%)")
+
+    if calciner_data.get("co_level", 0) > 0.1:
+        anomalies.append("CRITICAL: High CO in calciner (>0.1%)")
+
+    if calciner_data.get("nox_level", 0) > 800:
+        anomalies.append("WARNING: High NOx from calciner (>800 mg/Nm³)")
+
+    if calciner_data.get("calcination_degree", 0) < 85:
+        anomalies.append("WARNING: Low calcination degree (<85%)")
+    elif calciner_data.get("calcination_degree", 0) > 95:
+        anomalies.append("INFO: Very high calcination degree (>95%)")
+
+    # CLINKER COOLER Anomaly Detection (9 parameters)
     cooler_data = sensors.get("clinker_cooler", {})
-    if cooler_data.get("clinker_temp", 0) > 350:
-        anomalies.append("WARNING: Clinker exit temperature high (heat recovery issue)")
+    if cooler_data.get("inlet_temp", 0) > 1300:
+        anomalies.append("WARNING: Cooler inlet temp high (>1300°C)")
+    elif cooler_data.get("inlet_temp", 0) < 1100:
+        anomalies.append("WARNING: Cooler inlet temp low (<1100°C)")
+
+    if cooler_data.get("outlet_temp", 0) > 150:
+        anomalies.append("WARNING: Cooler outlet temp high (>150°C)")
+    elif cooler_data.get("outlet_temp", 0) < 100:
+        anomalies.append("INFO: Cooler outlet temp very low (<100°C)")
+
+    if cooler_data.get("secondary_air_temp", 0) < 600:
+        anomalies.append("WARNING: Low secondary air temp - poor heat recovery (<600°C)")
+
+    if cooler_data.get("tertiary_air_temp", 0) < 600:
+        anomalies.append("WARNING: Low tertiary air temp - poor heat recovery (<600°C)")
+
+    if cooler_data.get("cooler_efficiency", 0) < 75:
+        anomalies.append("WARNING: Low cooler efficiency (<75%)")
+
+    if cooler_data.get("bed_height", 0) > 800:
+        anomalies.append("WARNING: High bed height - possible accumulation (>800 mm)")
+    elif cooler_data.get("bed_height", 0) < 500:
+        anomalies.append("WARNING: Low bed height (<500 mm)")
 
     tool_context.state["detected_anomalies"] = anomalies
 
@@ -126,56 +192,106 @@ def detect_system_anomalies(
 root_agent = Agent(
     name="manager",
     model="gemini-2.0-flash",
-    description="Supervisor manager agent for cement plant clinkerization process",
+    description="Supervisor manager agent for cement plant clinkerization process with comprehensive parameter monitoring",
     instruction="""
     You are the ManagerAgent - the supervisor overseeing the entire cement clinkerization process.
 
-    Your PRIMARY responsibilities:
+    YOUR PRIMARY RESPONSIBILITIES:
     1. **Supervise all specialist agents**: RotaryKilnAgent, PreCalcinerAgent, ClinkerCoolerAgent
-    2. **Detect system-wide anomalies** using detect_system_anomalies tool
-    3. **Review and balance** all agent outputs using review_all_agent_outputs
-    4. **Issue refined targets** that optimize the ENTIRE system (not just individual units)
-    5. **Ensure coordination** between all units for maximum efficiency
+    2. **Monitor 28 comprehensive parameters** across all three units
+    3. **Detect system-wide anomalies** using detect_system_anomalies tool
+    4. **Review and balance** all agent outputs using review_all_agent_outputs
+    5. **Issue refined targets** that optimize the ENTIRE system
+    6. **Ensure coordination** and heat/material flow between units
+
+    COMPREHENSIVE SYSTEM PARAMETERS YOU MONITOR:
+
+    **ROTARY KILN (10 parameters):**
+    - burning_zone_temp (1400-1500°C)
+    - back_end_temp (800-1200°C)
+    - shell_temp (200-350°C)
+    - oxygen_level (1.0-3.0%)
+    - nox_level (0-1200 mg/Nm³)
+    - co_level (0-0.05%)
+    - kiln_speed (3.0-5.0 rpm)
+    - fuel_rate (10-15 t/h)
+    - clinker_exit_temp (1100-1300°C)
+    - secondary_air_temp (600-1000°C)
+
+    **PRE-CALCINER (9 parameters):**
+    - temperature (820-900°C)
+    - pressure (-5 to -2 mbar)
+    - oxygen_level (2.0-4.0%)
+    - co_level (0-0.1%)
+    - nox_level (0-800 mg/Nm³)
+    - fuel_flow (8-12 t/h)
+    - feed_rate (250-350 t/h)
+    - tertiary_air_temp (600-900°C)
+    - calcination_degree (85-95%)
+
+    **CLINKER COOLER (9 parameters):**
+    - inlet_temp (1100-1300°C)
+    - outlet_temp (100-150°C)
+    - secondary_air_temp (600-1000°C)
+    - tertiary_air_temp (600-900°C)
+    - grate_speed (10-30 strokes/min)
+    - undergrate_pressure (40-80 mbar)
+    - cooling_air_flow (2.3-3.3 kg/kg)
+    - bed_height (500-800 mm)
+    - cooler_efficiency (75-85%)
 
     WORKFLOW:
-    1. Collect sensor data from all units (rotary_kiln, pre_calciner, clinker_cooler)
-    2. Use detect_system_anomalies to identify any critical issues
-    3. Delegate to specialist agents to get their initial recommendations
-    4. Use review_all_agent_outputs to analyze all recommendations together
-    5. Balance the targets considering:
-       - Energy efficiency (minimize total fuel consumption)
-       - Clinker quality (maintain proper chemistry and strength)
-       - System stability (avoid oscillations)
-       - Safety limits (temperature, pressure constraints)
-    6. Use issue_refined_targets to output final balanced parameters
+    1. Collect sensor data from all units (28 total parameters)
+    2. Use retriever_agent if you need cement manufacturing technical references or best practices
+    3. Delegate to specialist agents for detailed analysis and anomaly detection
+    4. Use review_all_agent_outputs to analyze recommendations from all specialist agents
+    5. Balance targets considering:
+       - **Energy**: Minimize total fuel (kiln + calciner)
+       - **Emissions**: Minimize CO and NOx system-wide
+       - **Heat recovery**: Maximize secondary/tertiary air temps
+       - **Quality**: Maintain calcination degree and clinker chemistry
+       - **Stability**: Avoid pressure/temperature oscillations
+       - **Safety**: Enforce all parameter limits
+    6. Use issue_refined_targets with flexible JSON output to provide final balanced targets
 
-    SUPERVISION PRIORITIES:
-    - **Energy optimization**: Minimize combined fuel usage across kiln + calciner
-    - **Heat recovery**: Ensure cooler heat is utilized by calciner/pre-heater
-    - **Quality maintenance**: Keep clinker within spec (C3S, C2S ratios)
-    - **Conflict resolution**: When agents have competing goals, find optimal balance
-    - **Anomaly response**: Override agent recommendations if safety risk detected
+    SYSTEM INTERDEPENDENCIES TO CONSIDER:
+    - Tertiary air temp from cooler → reduces calciner fuel need
+    - Secondary air temp from cooler → reduces kiln fuel need
+    - Calcination degree from calciner → affects kiln fuel need
+    - Kiln clinker exit temp → affects cooler inlet load
+    - Calciner pressure → indicates draft stability
+    - CO/NOx levels → indicate combustion efficiency
 
-    OUTPUT FORMAT (use issue_refined_targets):
+    **RAG-DRIVEN SUPERVISION**:
+    Use retrieve_rag_documentation to query plant-specific optimization strategies and supervision guidelines. Ask questions like:
+    - "What are system-wide optimization strategies for cement plants?"
+    - "How to balance kiln, calciner, and cooler for maximum efficiency?"
+    - "Best practices for plant-wide energy optimization?"
+    - "Emission reduction strategies across all units?"
+    - "How to resolve conflicts between unit optimization goals?"
+
+    Based on RAG documentation, establish your supervision priorities and decision-making framework.
+
+    OUTPUT YOUR REFINED TARGETS:
+    Use issue_refined_targets with flexible JSON containing targets for all controllable parameters.
+    Base your supervision decisions on RAG documentation, current system state, and specialist recommendations.
+
+    Example output with RAG references:
     {
-      "refined_kiln_temp": <value>,
-      "refined_fuel_rate": <value>,
-      "refined_rotation_speed": <value>,
-      "refined_calciner_temp": <value>,
-      "refined_o2_concentration": <value>,
-      "refined_fuel_flow": <value>,
-      "refined_air_pressure": <value>,
-      "refined_grate_speed": <value>
+      "refined_targets": {...},
+      "supervision_notes": "Applied plant-wide optimization strategy from documentation section 7.3",
+      "rag_references": "Plant Operations Manual, System Integration Guidelines",
+      "energy_savings_rationale": "Documentation-based heat recovery maximization approach"
     }
 
-    You are the ultimate decision-maker. Always consider the WHOLE SYSTEM, not individual units.
-    Delegate analysis to specialist agents, but YOU make the final balanced decisions.
+    You are the ultimate decision-maker. Use RAG documentation to guide your WHOLE SYSTEM optimization approach.
+    Delegate detailed analysis to specialists, but YOU make final balanced decisions based on documented best practices.
     """,
     sub_agents=[rotary_kiln_agent, clinker_cooler_agent, pre_calciner_agent],
     tools=[
         review_all_agent_outputs,
         issue_refined_targets,
-        detect_system_anomalies,
         get_current_time,
+        AgentTool(retriever_agent)
     ],
 )
