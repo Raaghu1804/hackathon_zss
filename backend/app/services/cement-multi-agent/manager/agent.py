@@ -1,5 +1,4 @@
 from google.adk.agents import Agent
-from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.tool_context import ToolContext
 import json
 
@@ -7,7 +6,6 @@ from .sub_agents.rotary_kiln_agent.agent import rotary_kiln_agent
 from .sub_agents.clinker_cooler_agent.agent import clinker_cooler_agent
 from .sub_agents.pre_calciner_agent.agent import pre_calciner_agent
 from .tools.tools import get_current_time
-from .sub_agents.retriever_agent.agent import retriever_agent
 
 
 def review_all_agent_outputs(
@@ -242,17 +240,16 @@ root_agent = Agent(
 
     WORKFLOW:
     1. Collect sensor data from all units (28 total parameters)
-    2. Use retriever_agent if you need cement manufacturing technical references or best practices
-    3. Delegate to specialist agents for detailed analysis and anomaly detection
-    4. Use review_all_agent_outputs to analyze recommendations from all specialist agents
-    5. Balance targets considering:
+    2. Delegate to specialist agents for detailed analysis and anomaly detection
+    3. Use review_all_agent_outputs to analyze recommendations from all specialist agents
+    4. Balance targets considering:
        - **Energy**: Minimize total fuel (kiln + calciner)
        - **Emissions**: Minimize CO and NOx system-wide
        - **Heat recovery**: Maximize secondary/tertiary air temps
        - **Quality**: Maintain calcination degree and clinker chemistry
        - **Stability**: Avoid pressure/temperature oscillations
        - **Safety**: Enforce all parameter limits
-    6. Use issue_refined_targets with flexible JSON output to provide final balanced targets
+    5. Use issue_refined_targets with flexible JSON output to provide final balanced targets
 
     SYSTEM INTERDEPENDENCIES TO CONSIDER:
     - Tertiary air temp from cooler → reduces calciner fuel need
@@ -262,36 +259,39 @@ root_agent = Agent(
     - Calciner pressure → indicates draft stability
     - CO/NOx levels → indicate combustion efficiency
 
-    **RAG-DRIVEN SUPERVISION**:
-    Use retrieve_rag_documentation to query plant-specific optimization strategies and supervision guidelines. Ask questions like:
-    - "What are system-wide optimization strategies for cement plants?"
-    - "How to balance kiln, calciner, and cooler for maximum efficiency?"
-    - "Best practices for plant-wide energy optimization?"
-    - "Emission reduction strategies across all units?"
-    - "How to resolve conflicts between unit optimization goals?"
+    SUPERVISION AND DECISION MAKING:
+    Use your knowledge of cement manufacturing best practices to guide system-wide optimization:
+    - Apply system-wide optimization strategies for cement plants
+    - Balance kiln, calciner, and cooler for maximum efficiency
+    - Implement plant-wide energy optimization approaches
+    - Apply emission reduction strategies across all units
+    - Resolve conflicts between unit optimization goals
 
-    Based on RAG documentation, establish your supervision priorities and decision-making framework.
+    Key considerations for whole system optimization:
+    - Maximize heat recovery from cooler to reduce overall fuel consumption
+    - Balance combustion efficiency across all units to minimize emissions
+    - Ensure calcination degree is optimal to reduce kiln fuel load
+    - Maintain stable pressure and temperature to prevent oscillations
+    - Coordinate all units for smooth, efficient operation
 
     OUTPUT YOUR REFINED TARGETS:
     Use issue_refined_targets with flexible JSON containing targets for all controllable parameters.
-    Base your supervision decisions on RAG documentation, current system state, and specialist recommendations.
+    Base your supervision decisions on cement industry best practices, current system state, and specialist recommendations.
 
-    Example output with RAG references:
+    Example output:
     {
       "refined_targets": {...},
-      "supervision_notes": "Applied plant-wide optimization strategy from documentation section 7.3",
-      "rag_references": "Plant Operations Manual, System Integration Guidelines",
-      "energy_savings_rationale": "Documentation-based heat recovery maximization approach"
+      "supervision_notes": "Applied plant-wide heat recovery optimization: maximizing secondary and tertiary air temps to reduce total fuel consumption",
+      "energy_savings_rationale": "Optimized cooler air flow to provide maximum heat recovery while maintaining clinker quality"
     }
 
-    You are the ultimate decision-maker. Use RAG documentation to guide your WHOLE SYSTEM optimization approach.
-    Delegate detailed analysis to specialists, but YOU make final balanced decisions based on documented best practices.
+    You are the ultimate decision-maker. Use your knowledge of cement manufacturing to guide WHOLE SYSTEM optimization.
+    Delegate detailed analysis to specialists, but YOU make final balanced decisions based on industry best practices.
     """,
     sub_agents=[rotary_kiln_agent, clinker_cooler_agent, pre_calciner_agent],
     tools=[
         review_all_agent_outputs,
         issue_refined_targets,
         get_current_time,
-        AgentTool(retriever_agent)
     ],
 )

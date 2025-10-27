@@ -1,9 +1,6 @@
 from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
 import json
-from google.adk.tools.agent_tool import AgentTool
-# from ...tools.tools import root_agent
-from ..retriever_agent.agent import retriever_agent
 
 
 
@@ -118,8 +115,7 @@ clinker_cooler_agent = Agent(
     1. Use analyze_cooler_parameters with ALL 9 parameters
     2. Review other agents' recommendations
     3. Consider manager's refined targets (if provided)
-    4. Use retrieve_rag_documentation if you need to reference cement manufacturing best practices or technical documentation
-    5. Analyze interdependencies:
+    4. Analyze interdependencies:
        - Inlet temp from kiln affects cooling load
        - Secondary air temp impacts kiln fuel efficiency
        - Tertiary air temp impacts calciner fuel efficiency
@@ -128,23 +124,25 @@ clinker_cooler_agent = Agent(
        - Cooling air flow determines heat recovery vs. clinker cooling
 
     INTELLIGENT DECISION MAKING:
-    **PRIMARY APPROACH**: Use retrieve_rag_documentation to query cement manufacturing best practices and optimization strategies. Ask questions like:
-    - "What are optimal clinker cooler operating parameters?"
-    - "How to maximize heat recovery in clinker coolers?"
-    - "Best practices for cooler efficiency optimization"
-    - "Troubleshooting high bed height in coolers"
-    - "Optimal air flow strategies for cooling"
-
-    Based on RAG documentation guidance:
+    Use your knowledge of cement manufacturing best practices and optimization strategies to:
     - Identify which parameters need adjustment
     - Decide which parameters are controllable vs. monitored
-    - Determine optimal target values per documentation
+    - Determine optimal target values based on standard industry practices
     - Balance competing objectives (cooling vs. heat recovery)
-    - Detect anomalies and apply documented solutions
+    - Detect anomalies and apply solutions
+
+    Key considerations:
+    - Maximize secondary and tertiary air temperatures for heat recovery to kiln and calciner
+    - Cool clinker to safe handling temperature (100-150°C outlet)
+    - Prevent thermal shock by maintaining gradual cooling
+    - Optimize cooler efficiency (target 75-85%)
+    - High bed height indicates accumulation - increase grate speed
+    - Low secondary/tertiary air temps indicate poor heat recovery - optimize air flow
+    - Balance air flow between cooling effectiveness and heat recovery
 
     OUTPUT YOUR TARGETS:
     Use set_cooler_targets with a JSON string containing your recommended targets.
-    Base your decisions on RAG documentation and current conditions.
+    Base your decisions on cement industry best practices and current conditions.
 
     Example output format:
     {
@@ -153,11 +151,8 @@ clinker_cooler_agent = Agent(
       "target_undergrate_pressure": 60,
       "target_secondary_air_temp": 850,
       "target_tertiary_air_temp": 780,
-      "optimization_notes": "Applied strategy from documentation section 4.2: increased air flow for heat recovery",
-      "rag_references": "Cooler Best Practices Manual, Heat Recovery Guidelines"
+      "optimization_notes": "Increased air flow to maximize heat recovery while maintaining safe clinker outlet temperature"
     }
-
-    **RAG-DRIVEN OPTIMIZATION**: Query documentation for optimization priorities instead of following hardcoded rules. The documentation will guide you on parameters, targets, and control strategies specific to your plant configuration.
     """,
-    tools=[analyze_cooler_parameters, set_cooler_targets, AgentTool(retriever_agent)],
+    tools=[analyze_cooler_parameters, set_cooler_targets],
 )

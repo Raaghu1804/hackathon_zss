@@ -1,8 +1,6 @@
 from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
 import json
-from ..retriever_agent.agent import retriever_agent
-from google.adk.tools.agent_tool import AgentTool
 
 def analyze_kiln_parameters(
     burning_zone_temp: float,
@@ -118,8 +116,7 @@ rotary_kiln_agent = Agent(
     1. Use analyze_kiln_parameters with ALL 10 parameters
     2. Review other agents' recommendations
     3. Consider manager's refined targets (if provided)
-    4. Use retrieve_rag_documentation if you need to reference cement manufacturing best practices or technical documentation
-    5. Analyze interdependencies:
+    4. Analyze interdependencies:
        - Pre-calciner's calcination degree affects fuel needs
        - Secondary air temp from cooler impacts fuel efficiency
        - Clinker exit temp affects cooler load
@@ -128,24 +125,24 @@ rotary_kiln_agent = Agent(
        - O2, CO, NOx levels indicate combustion efficiency
 
     INTELLIGENT DECISION MAKING:
-    **PRIMARY APPROACH**: Use retrieve_rag_documentation to query cement manufacturing best practices and optimization strategies. Ask questions like:
-    - "What are optimal rotary kiln operating parameters for clinker quality?"
-    - "How to optimize kiln fuel efficiency and reduce emissions?"
-    - "Best practices for kiln coating management and shell temperature?"
-    - "Optimal burning zone temperature for different clinker types?"
-    - "Troubleshooting high CO or NOx in rotary kilns?"
-
-    Based on RAG documentation guidance:
+    Use your knowledge of cement manufacturing best practices and optimization strategies to:
     - Identify which parameters need adjustment
     - Decide which parameters are controllable vs. monitored
-    - Determine optimal target values per documentation
+    - Determine optimal target values based on standard industry practices
     - Balance competing objectives (quality vs. efficiency vs. emissions)
     - Detect coating buildup (shell temp patterns)
     - Identify combustion issues (O2, CO patterns)
 
+    Key considerations:
+    - Optimal burning zone temperature depends on clinker chemistry and quality requirements
+    - High CO indicates incomplete combustion - increase O2 or adjust fuel
+    - High NOx indicates excessive temperatures - reduce burning zone temp or optimize combustion
+    - Shell temperature patterns reveal refractory coating condition
+    - Secondary air temperature from cooler reduces fuel requirements
+
     OUTPUT YOUR TARGETS:
     Use set_kiln_targets with a JSON string containing your recommended targets.
-    Base your decisions on RAG documentation and current conditions.
+    Base your decisions on cement industry best practices and current conditions.
 
     Example output format:
     {
@@ -153,11 +150,8 @@ rotary_kiln_agent = Agent(
       "target_fuel_rate": 12.5,
       "target_kiln_speed": 3.8,
       "target_oxygen_level": 2.0,
-      "optimization_notes": "Applied fuel reduction per documentation: utilizing high secondary air temp from cooler",
-      "rag_references": "Kiln Operations Manual, Fuel Efficiency Guidelines"
+      "optimization_notes": "Reduced fuel rate due to high secondary air temp from cooler, maintaining optimal burning zone temperature"
     }
-
-    **RAG-DRIVEN OPTIMIZATION**: Query documentation for optimization priorities instead of following hardcoded rules. The documentation will guide you on burning zone temps, emission targets, and control strategies specific to your clinker chemistry and plant configuration.
     """,
-    tools=[analyze_kiln_parameters, set_kiln_targets, AgentTool(retriever_agent)],
+    tools=[analyze_kiln_parameters, set_kiln_targets],
 )
