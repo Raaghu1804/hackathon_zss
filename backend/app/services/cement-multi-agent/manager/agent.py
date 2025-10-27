@@ -2,9 +2,9 @@ from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
 import json
 
-from .sub_agents.rotary_kiln_agent.agent import rotary_kiln_agent
-from .sub_agents.clinker_cooler_agent.agent import clinker_cooler_agent
-from .sub_agents.pre_calciner_agent.agent import pre_calciner_agent
+from .sub_agents.rotary_kiln_agent.agent import rotary_kiln_agent, analyze_kiln_parameters, set_kiln_targets
+from .sub_agents.clinker_cooler_agent.agent import clinker_cooler_agent, analyze_cooler_parameters, set_cooler_targets
+from .sub_agents.pre_calciner_agent.agent import pre_calciner_agent, analyze_calciner_parameters, set_calciner_targets
 from .tools.tools import get_current_time
 
 
@@ -197,9 +197,9 @@ root_agent = Agent(
     YOUR PRIMARY RESPONSIBILITIES:
     1. **Supervise all specialist agents**: RotaryKilnAgent, PreCalcinerAgent, ClinkerCoolerAgent
     2. **Monitor 28 comprehensive parameters** across all three units
-    3. **Detect system-wide anomalies** using detect_system_anomalies tool
+    3. **Delegate to ALL THREE specialist agents** for comprehensive analysis and anomaly detection
     4. **Review and balance** all agent outputs using review_all_agent_outputs
-    5. **Issue refined targets** that optimize the ENTIRE system
+    5. **Issue refined targets** that optimize the ENTIRE system using issue_refined_targets
     6. **Ensure coordination** and heat/material flow between units
 
     COMPREHENSIVE SYSTEM PARAMETERS YOU MONITOR:
@@ -238,18 +238,70 @@ root_agent = Agent(
     - bed_height (500-800 mm)
     - cooler_efficiency (75-85%)
 
-    WORKFLOW:
-    1. Collect sensor data from all units (28 total parameters)
-    2. Delegate to specialist agents for detailed analysis and anomaly detection
-    3. Use review_all_agent_outputs to analyze recommendations from all specialist agents
-    4. Balance targets considering:
+    WORKFLOW - FOLLOW THESE STEPS IN ORDER:
+
+    Step 1: CALL ALL THREE SPECIALIST ANALYSIS TOOLS (MANDATORY - ALL THREE!)
+
+    You have access to three specialist analysis tools:
+    - analyze_kiln_parameters (for rotary kiln analysis)
+    - analyze_calciner_parameters (for pre-calciner analysis)
+    - analyze_cooler_parameters (for clinker cooler analysis)
+
+    When you receive sensor data, you MUST call ALL THREE analysis tools with their respective parameters:
+
+    1. Call analyze_kiln_parameters with ALL 10 kiln parameters:
+       - burning_zone_temp, back_end_temp, shell_temp, oxygen_level, nox_level,
+       - co_level, kiln_speed, fuel_rate, clinker_exit_temp, secondary_air_temp
+       - other_recommendations (empty string if no other recommendations yet)
+
+    2. Call analyze_calciner_parameters with ALL 9 calciner parameters:
+       - temperature, pressure, oxygen_level, co_level, nox_level,
+       - fuel_flow, feed_rate, tertiary_air_temp, calcination_degree
+       - other_recommendations (empty string if no other recommendations yet)
+
+    3. Call analyze_cooler_parameters with ALL 9 cooler parameters:
+       - inlet_temp, outlet_temp, secondary_air_temp, tertiary_air_temp,
+       - grate_speed, undergrate_pressure, cooling_air_flow, bed_height, cooler_efficiency
+       - other_recommendations (empty string if no other recommendations yet)
+
+    These tools will return analysis results that you can then review.
+
+    Step 2: WAIT FOR ALL THREE ANALYSIS RESULTS
+    After calling all three analysis tools, wait for their results.
+    Each will return current readings and any initial analysis.
+
+    Step 3: CALL THE SET_TARGETS TOOLS FOR EACH UNIT
+    Based on the analysis results and your system-wide optimization knowledge:
+
+    1. Call set_kiln_targets with a JSON string containing kiln optimization targets
+    2. Call set_calciner_targets with a JSON string containing calciner optimization targets
+    3. Call set_cooler_targets with a JSON string containing cooler optimization targets
+
+    Step 4: REVIEW AND BALANCE ALL OUTPUTS
+    - Use review_all_agent_outputs with the target JSONs from all three units
+    - Identify any conflicts or optimization opportunities across units
+    - Consider system-wide interdependencies and trade-offs
+    - Balance considering:
        - **Energy**: Minimize total fuel (kiln + calciner)
        - **Emissions**: Minimize CO and NOx system-wide
        - **Heat recovery**: Maximize secondary/tertiary air temps
        - **Quality**: Maintain calcination degree and clinker chemistry
        - **Stability**: Avoid pressure/temperature oscillations
        - **Safety**: Enforce all parameter limits
-    5. Use issue_refined_targets with flexible JSON output to provide final balanced targets
+
+    Step 5: ISSUE FINAL REFINED TARGETS (MANDATORY)
+    - You MUST use issue_refined_targets to provide final balanced targets for all units
+    - This is a REQUIRED step - do not stop without issuing refined targets
+    - Your refined targets should optimize the ENTIRE system, not just individual units
+
+    Step 6: COMMUNICATE RESULTS TO USER IN JSON FORMAT (MANDATORY)
+    - After issuing refined targets, you MUST provide the results to the user in JSON format
+    - The JSON output must include:
+      * "current_state": Current readings from all three units
+      * "refined_targets": Final optimized targets for all three units (kiln, calciner, cooler)
+      * "optimization_rationale": Explanation of decisions made
+      * "expected_benefits": Energy savings, emissions reduction, efficiency improvements
+    - DO NOT just say "I have issued the refined targets" - output the complete JSON with all targets!
 
     SYSTEM INTERDEPENDENCIES TO CONSIDER:
     - Tertiary air temp from cooler → reduces calciner fuel need
@@ -278,20 +330,117 @@ root_agent = Agent(
     Use issue_refined_targets with flexible JSON containing targets for all controllable parameters.
     Base your supervision decisions on cement industry best practices, current system state, and specialist recommendations.
 
-    Example output:
+    Example final output to user (in JSON format):
+    ```json
     {
-      "refined_targets": {...},
-      "supervision_notes": "Applied plant-wide heat recovery optimization: maximizing secondary and tertiary air temps to reduce total fuel consumption",
-      "energy_savings_rationale": "Optimized cooler air flow to provide maximum heat recovery while maintaining clinker quality"
+      "current_state": {
+        "rotary_kiln": {
+          "burning_zone_temp": 1460,
+          "fuel_rate": 12.6,
+          "oxygen_level": 2.3,
+          "nox_level": 930
+        },
+        "pre_calciner": {
+          "temperature": 865,
+          "fuel_flow": 10.4,
+          "calcination_degree": 90
+        },
+        "clinker_cooler": {
+          "inlet_temp": 1195,
+          "cooler_efficiency": 80
+        }
+      },
+      "refined_targets": {
+        "rotary_kiln": {
+          "target_burning_zone_temp": 1450,
+          "target_fuel_rate": 12.2,
+          "target_kiln_speed": 4.0
+        },
+        "pre_calciner": {
+          "target_temperature": 875,
+          "target_fuel_flow": 9.8,
+          "target_calcination_degree": 92
+        },
+        "clinker_cooler": {
+          "target_grate_speed": 20,
+          "target_cooling_air_flow": 2.7,
+          "target_secondary_air_temp": 880
+        }
+      },
+      "optimization_rationale": "Applied plant-wide heat recovery optimization: maximizing secondary and tertiary air temps to reduce total fuel consumption",
+      "expected_benefits": {
+        "energy_savings": "Reduced total fuel by 4% through optimized heat recovery",
+        "emissions_reduction": "Lowered NOx emissions by 8% through temperature optimization",
+        "efficiency_improvements": "Improved overall system efficiency by 3%"
+      }
     }
+    ```
+
+    CRITICAL REQUIREMENTS - READ CAREFULLY:
+    1. You MUST call ALL THREE analysis tools:
+       - analyze_kiln_parameters (with all 10 kiln parameters)
+       - analyze_calciner_parameters (with all 9 calciner parameters)
+       - analyze_cooler_parameters (with all 9 cooler parameters)
+    2. Then call ALL THREE set_targets tools with your optimization recommendations
+    3. Use review_all_agent_outputs with the target JSONs from all three units
+    4. You MUST use issue_refined_targets to provide final system-wide optimization targets
+    5. After calling issue_refined_targets, you MUST present the results to the user in JSON format
+    6. DO NOT just say "I have issued refined targets" - output a complete JSON with current state, refined targets, rationale, and expected benefits
+    7. DO NOT stop after calling only one tool - you must call ALL THREE analysis tools
+
+    HOW TO USE THE ANALYSIS TOOLS:
+
+    When you receive sensor data, immediately use the three analysis tools to get specialist insights.
+
+    Example workflow:
+    1. Call analyze_kiln_parameters(burning_zone_temp=1460, back_end_temp=1015, ..., other_recommendations="")
+    2. Call analyze_calciner_parameters(temperature=865, pressure=-3.4, ..., other_recommendations="")
+    3. Call analyze_cooler_parameters(inlet_temp=1195, outlet_temp=135, ..., other_recommendations="")
+    4. Based on the analysis results and your cement manufacturing knowledge, determine optimal targets
+    5. Call set_kiln_targets(targets_json='{"target_burning_zone_temp": 1450, ...}')
+    6. Call set_calciner_targets(targets_json='{"target_temperature": 875, ...}')
+    7. Call set_cooler_targets(targets_json='{"target_grate_speed": 20, ...}')
+    8. Call review_all_agent_outputs with the target JSONs
+    9. Call issue_refined_targets with your final balanced system-wide targets
+    10. Present the results to the user in JSON format:
+        ```json
+        {
+          "current_state": {
+            "rotary_kiln": { "burning_zone_temp": 1460, "back_end_temp": 1015, ... },
+            "pre_calciner": { "temperature": 865, "pressure": -3.4, ... },
+            "clinker_cooler": { "inlet_temp": 1195, "outlet_temp": 135, ... }
+          },
+          "refined_targets": {
+            "rotary_kiln": { "target_burning_zone_temp": 1450, "target_fuel_rate": 12.2, ... },
+            "pre_calciner": { "target_temperature": 875, "target_fuel_flow": 9.8, ... },
+            "clinker_cooler": { "target_grate_speed": 20, "target_cooling_air_flow": 2.7, ... }
+          },
+          "optimization_rationale": "Maximized heat recovery from cooler...",
+          "expected_benefits": {
+            "energy_savings": "Reduced total fuel consumption by optimizing...",
+            "emissions_reduction": "Lower NOx through...",
+            "efficiency_improvements": "Improved cooler efficiency to..."
+          }
+        }
+        ```
+
+    These are TOOL CALLS, not conversations. Use the tools to gather data and set targets.
+    After issuing refined targets, COMMUNICATE the results in JSON format to the user.
 
     You are the ultimate decision-maker. Use your knowledge of cement manufacturing to guide WHOLE SYSTEM optimization.
-    Delegate detailed analysis to specialists, but YOU make final balanced decisions based on industry best practices.
+    Delegate detailed analysis to ALL THREE specialists, then make final balanced decisions and issue refined targets.
     """,
-    sub_agents=[rotary_kiln_agent, clinker_cooler_agent, pre_calciner_agent],
     tools=[
+        # Manager's own tools
         review_all_agent_outputs,
         issue_refined_targets,
         get_current_time,
+        # Specialist agent tools for analysis
+        analyze_kiln_parameters,
+        set_kiln_targets,
+        analyze_calciner_parameters,
+        set_calciner_targets,
+        analyze_cooler_parameters,
+        set_cooler_targets,
     ],
 )
