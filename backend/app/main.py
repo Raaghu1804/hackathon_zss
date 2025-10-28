@@ -13,7 +13,16 @@ from app.models.sensors import SensorData, UnitStatus, AnomalyAlert
 from app.models.agents import AnalyticsQuery, AnalyticsResponse, AgentState
 from app.services.data_simulator import simulator
 from app.services.ai_agents import agent_orchestrator
+from google.adk.sessions import DatabaseSessionService
+from google.adk.runners import Runner
+import os
+from dotenv import load_dotenv
+from pydantic import BaseModel
+import importlib.util
+import sys
 
+from app.services.cement_multi_agent.manager.agent import root_agent
+from app.utils.utils import call_agent_async
 # ===== ADD THIS IMPORT =====
 from app.api.enhanced_endpoints import router as enhanced_router
 
@@ -28,6 +37,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class MessageRequest(BaseModel):
+    data: str
 
 # ===== THEN INCLUDE THE ENHANCED ROUTER =====
 app.include_router(enhanced_router, tags=["Enhanced Features"])
@@ -373,6 +385,45 @@ async def get_historical_sensors(unit: str, hours: int = 24):
         print(f"Error in get_historical_sensors: {e}")
         return []
 
+
+
+### MULTI AGENT ANOMALY RESOLUTION RECOMMENDER
+
+APP_NAME = "CEMENT_PLANT_MANAGER"
+db_url = os.environ.get("POSTGRES_DB_URL", "sqlite:///./app_builder_data.db")
+session_service = DatabaseSessionService(db_url=db_url)
+
+
+#### AGents
+
+
+def get_session_service():
+    global session_service
+    if session_service is None:
+        DB_URL = os.environ.get("POSTGRES_DB_URL", "sqlite:///./app_builder_data.db")
+        session_service = DatabaseSessionService(db_url=DB_URL)
+    return session_service
+
+
+@app.post("/send_anomaly_data")
+async def send_message(req:MessageRequest):
+    """Send anomaly data to the multi-agent system for analysis and recommendations."""
+
+    user_id = "plant_manager"
+    session_service = get_session_service()
+    new_session = await asyncio.wait_for(
+        session_service.create_session(app_name=APP_NAME, user_id=user_id),
+        timeout=10
+    )
+    session_id = new_session.id
+    runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
+    try:
+        response = await call_agent_async(runner, session_id=session_id,user_id=user_id, query=req.data)
+        return {"response": response}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Agent response timed out.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent response failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
