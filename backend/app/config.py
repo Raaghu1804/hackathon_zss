@@ -1,8 +1,9 @@
-# backend/app/config.py
+# backend/app/config.py - FIXED VERSION
 
 import os
 from typing import ClassVar
 from pydantic_settings import BaseSettings
+from typing import Optional, Dict, List, ClassVar
 
 
 class Settings(BaseSettings):
