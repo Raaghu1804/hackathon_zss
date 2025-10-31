@@ -13,10 +13,20 @@ from app.models.sensors import SensorData, UnitStatus, AnomalyAlert
 from app.models.agents import AnalyticsQuery, AnalyticsResponse, AgentState
 from app.services.data_simulator import simulator
 from app.services.ai_agents import agent_orchestrator
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Set Google Cloud credentials for Vertex AI access (relative path)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Go up to project root
+CREDENTIALS_PATH = BASE_DIR / "jkcement-hackathon-c9b677ac6373.json"
+if CREDENTIALS_PATH.exists():
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(CREDENTIALS_PATH)
+else:
+    print(f"⚠️ Warning: Google Cloud credentials not found at {CREDENTIALS_PATH}")
+
 from google.adk.sessions import DatabaseSessionService
 from google.adk.runners import Runner
-import os
-from dotenv import load_dotenv
 from pydantic import BaseModel
 import importlib.util
 import sys
@@ -92,6 +102,20 @@ async def startup_event():
     print("✅ Sensor broadcast started")
 
 
+def convert_sensor_data_for_adk(units_data: dict) -> dict:
+    """Convert sensor data from array format to dict format for Google ADK agents.
+
+    Input format: {"rotary_kiln": [SensorData(sensor_name="temp", value=1450), ...]}
+    Output format: {"rotary_kiln": {"temp": 1450, "fuel_rate": 12, ...}}
+    """
+    adk_format = {}
+    for unit, sensors in units_data.items():
+        adk_format[unit] = {}
+        for sensor in sensors:
+            adk_format[unit][sensor.sensor_name] = sensor.value
+    return adk_format
+
+
 # Replace the broadcast_sensor_data function in your main.py with this fixed version
 
 async def broadcast_sensor_data():
@@ -100,8 +124,8 @@ async def broadcast_sensor_data():
         try:
             # Get latest sensor readings
             async with AsyncSessionLocal() as session:
-                # Get readings from last 5 seconds
-                cutoff_time = datetime.utcnow() - timedelta(seconds=5)
+                # Get readings from last 60 seconds (matching SIMULATION_INTERVAL)
+                cutoff_time = datetime.utcnow() - timedelta(seconds=60)
                 result = await session.execute(
                     select(SensorReading).where(SensorReading.timestamp >= cutoff_time)
                 )
@@ -124,22 +148,12 @@ async def broadcast_sensor_data():
                         )
                         units_data[reading.unit].append(sensor_data)
 
-                    # Process through AI agents and detect anomalies
+                    # Detect anomalies using simulator only (Google ADK handles all analysis)
                     anomalies = []
                     for unit, data in units_data.items():
-                        try:
-                            # Use process_sensor_data instead of process_with_public_data
-                            analysis = await agent_orchestrator.process_sensor_data(unit, data)
-
-                            # Check for anomalies
-                            unit_anomalies = simulator.detect_anomalies(data)
-                            if unit_anomalies:
-                                anomalies.extend(unit_anomalies)
-                                # Handle through agents
-                                await agent_orchestrator.handle_anomalies(unit_anomalies)
-                        except Exception as e:
-                            print(f"⚠️ Error processing unit {unit}: {e}")
-                            continue
+                        unit_anomalies = simulator.detect_anomalies(data)
+                        if unit_anomalies:
+                            anomalies.extend(unit_anomalies)
 
                     # Broadcast to WebSocket clients
                     await manager.broadcast({
@@ -152,6 +166,46 @@ async def broadcast_sensor_data():
                         "anomalies": [a.dict() for a in anomalies] if anomalies else []
                     })
 
+                    # Trigger Google ADK Multi-Agent System for ALL sensor data (every 60 seconds)
+                    try:
+                        anomaly_status = "ANOMALIES DETECTED" if anomalies else "NORMAL OPERATION"
+                        print(f"🤖 Triggering Google ADK Multi-Agent System - Status: {anomaly_status}")
+
+                        # Convert sensor data format for Google ADK
+                        adk_sensor_data = convert_sensor_data_for_adk(units_data)
+
+                        # Convert to JSON string for ADK
+                        sensor_data_str = json.dumps(adk_sensor_data)
+
+                        # Create ADK session and runner
+                        user_id = "plant_manager"
+                        session_service = get_session_service()
+                        new_session = await asyncio.wait_for(
+                            session_service.create_session(app_name=APP_NAME, user_id=user_id),
+                            timeout=10
+                        )
+                        session_id = new_session.id
+                        runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
+
+                        # Call Google ADK with WebSocket streaming
+                        await call_agent_async(
+                            runner=runner,
+                            session_id=session_id,
+                            user_id=user_id,
+                            query=f"Analyze the current cement plant sensor data and provide system-wide optimization recommendations:\n\nStatus: {anomaly_status}\n\nSensor Data:\n{sensor_data_str}",
+                            websocket_manager=manager
+                        )
+
+                        print("✅ Google ADK Multi-Agent analysis completed")
+
+                    except Exception as e:
+                        print(f"❌ Error in Google ADK processing: {e}")
+                        await manager.broadcast({
+                            "type": "agent_communication",
+                            "event": "error",
+                            "message": f"Error in multi-agent analysis: {str(e)}"
+                        })
+
             await asyncio.sleep(settings.SIMULATION_INTERVAL)
 
         except Exception as e:
@@ -162,20 +216,17 @@ async def broadcast_sensor_data():
 # WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Enhanced WebSocket endpoint with public data updates"""
+    """WebSocket endpoint for real-time sensor data and agent communications"""
     await manager.connect(websocket)
     print(f"🔌 New WebSocket connection. Total connections: {len(manager.active_connections)}")
 
     try:
-        # Send initial data
-        plant_config = settings.PLANT_CONFIGS[0] if settings.PLANT_CONFIGS else {}
-        if plant_config:
-            public_data = await public_data_service.aggregate_public_data(plant_config)
-            await websocket.send_json({
-                "type": "initial_data",
-                "public_data_available": bool(public_data),
-                "plant_config": plant_config
-            })
+        # Send initial connection confirmation
+        await websocket.send_json({
+            "type": "connection",
+            "status": "connected",
+            "message": "Connected to Cement AI Optimizer"
+        })
 
         while True:
             # Keep connection alive and wait for messages

@@ -1,0 +1,53 @@
+# Docker Compose for Cement AI Optimizer
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cement-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/venv
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_api_key_here}
+      - DATABASE_URL=sqlite:///./cement_plant.db
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+    networks:
+      - cement-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cement-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - cement-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+networks:
+  cement-network:
+    driver: bridge

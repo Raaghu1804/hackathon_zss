@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     # Simulation Settings
-    SIMULATION_INTERVAL: int = 5  # seconds
+    SIMULATION_INTERVAL: int = 60  # seconds
 
     # Sensor Optimal Ranges
     PRECALCINER_RANGES: ClassVar[dict] = {

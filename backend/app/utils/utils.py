@@ -57,10 +57,13 @@ async def display_state(
         print(f"Error displaying state: {e}")
 
 
-async def process_agent_response(event):
-    """Process and display agent response events."""
+async def process_agent_response(event, websocket_manager=None):
+    """Process and display agent response events, with optional WebSocket streaming."""
     # Log basic event info
     print(f"Event ID: {event.id}, Author: {event.author}")
+
+    # Track intermediate messages for WebSocket
+    intermediate_messages = []
 
     # Check for specific parts first
     has_specific_part = False
@@ -80,11 +83,51 @@ async def process_agent_response(event):
                 has_specific_part = True
             elif hasattr(part, "tool_response") and part.tool_response:
                 # Print tool response information
-                print(f"  Tool Response: {part.tool_response.output}")
+                tool_output = str(part.tool_response.output)
+                print(f"  Tool Response: {tool_output}")
+
+                # Add tool response to intermediate messages for WebSocket
+                intermediate_messages.append({
+                    "type": "tool_response",
+                    "agent": event.author,
+                    "message": f"Tool executed: {tool_output[:200]}..."  # Truncate long outputs
+                })
+                has_specific_part = True
+            elif hasattr(part, "function_call") and part.function_call:
+                # Capture function/tool calls
+                func_name = part.function_call.name
+                print(f"  Function Call: {func_name}")
+
+                # Add function call to intermediate messages for WebSocket
+                intermediate_messages.append({
+                    "type": "tool_call",
+                    "agent": event.author,
+                    "message": f"🔧 {event.author} → Calling tool: {func_name}"
+                })
                 has_specific_part = True
             # Also print any text parts found in any event for debugging
             elif hasattr(part, "text") and part.text and not part.text.isspace():
-                print(f"  Text: '{part.text.strip()}'")
+                text_content = part.text.strip()
+                print(f"  Text: '{text_content}'")
+
+                # Add intermediate text to messages if not final response
+                if not event.is_final_response():
+                    intermediate_messages.append({
+                        "type": "intermediate_text",
+                        "agent": event.author,
+                        "message": text_content[:300]  # Truncate long messages
+                    })
+
+    # Broadcast intermediate messages to WebSocket
+    if websocket_manager and intermediate_messages:
+        for msg in intermediate_messages:
+            await websocket_manager.broadcast({
+                "type": "agent_communication",
+                "event": msg["type"],
+                "agent": msg["agent"],
+                "message": msg["message"],
+                "is_final": False
+            })
 
     # Check for final response after specific parts
     final_response = None
@@ -112,8 +155,16 @@ async def process_agent_response(event):
     return final_response
 
 
-async def call_agent_async(runner, user_id, session_id, query):
-    """Call the agent asynchronously with the user's query."""
+async def call_agent_async(runner, user_id, session_id, query, websocket_manager=None):
+    """Call the agent asynchronously with the user's query.
+
+    Args:
+        runner: The ADK runner
+        user_id: User ID for the session
+        session_id: Session ID
+        query: The query string to send to agents
+        websocket_manager: Optional WebSocket manager to stream agent responses in real-time
+    """
     content = types.Content(role="user", parts=[types.Part(text=query)])
     print(
         f"\n{Colors.BG_GREEN}{Colors.BLACK}{Colors.BOLD}--- Running Query: {query} ---{Colors.RESET}"
@@ -129,12 +180,32 @@ async def call_agent_async(runner, user_id, session_id, query):
         "State BEFORE processing",
     )
 
+    # Notify via WebSocket that ADK processing has started
+    if websocket_manager:
+        await websocket_manager.broadcast({
+            "type": "agent_communication",
+            "event": "started",
+            "message": "🤖 Google ADK Multi-Agent System activated - analyzing anomaly..."
+        })
+
     # try:
     async for event in runner.run_async(
         user_id=user_id, session_id=session_id, new_message=content
     ):
-        # Process each event and get the final response if available
-        response = await process_agent_response(event)
+        # Process each event (now includes WebSocket streaming of intermediate steps)
+        response = await process_agent_response(event, websocket_manager=websocket_manager)
+
+        # Stream final agent responses via WebSocket
+        if websocket_manager and response:
+            agent_name = event.author if hasattr(event, 'author') else "Agent"
+            await websocket_manager.broadcast({
+                "type": "agent_communication",
+                "event": "agent_response",
+                "agent": agent_name,
+                "message": response,
+                "is_final": event.is_final_response() if hasattr(event, 'is_final_response') else False
+            })
+
         if response:
             final_response_text = response
     # except Exception as e:
@@ -148,5 +219,13 @@ async def call_agent_async(runner, user_id, session_id, query):
         session_id,
         "State AFTER processing",
     )
+
+    # Notify completion via WebSocket
+    if websocket_manager:
+        await websocket_manager.broadcast({
+            "type": "agent_communication",
+            "event": "completed",
+            "message": "✅ Multi-agent analysis completed"
+        })
 
     return final_response_text

@@ -16,10 +16,7 @@ const api = {
     const response = await fetch(`${API_BASE}/api/units/status`);
     return response.json();
   },
-  getAgentCommunications: async () => {
-    const response = await fetch(`${API_BASE}/api/agents/communications`);
-    return response.json();
-  },
+  // getAgentCommunications removed - now using WebSocket for real-time Google ADK messages
   queryAnalytics: async (question) => {
     const response = await fetch(`${API_BASE}/api/analytics/query`, {
       method: 'POST',
@@ -215,7 +212,7 @@ function App() {
   useEffect(() => {
     // Load initial data
     loadUnitsStatus();
-    loadCommunications();
+    // NOTE: Not loading old communications - only showing real-time Google ADK messages via WebSocket
 
     // Setup WebSocket connection
     const ws = new WebSocket('ws://localhost:8000/ws');
@@ -227,9 +224,36 @@ function App() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
       if (data.type === 'sensor_update') {
         // Update real-time data
         loadUnitsStatus();
+      }
+      else if (data.type === 'agent_communication') {
+        // Handle Google ADK Multi-Agent communication in real-time (including intermediate steps)
+        const messageType =
+          data.event === 'started' ? 'status' :
+          data.event === 'completed' ? 'status' :
+          data.event === 'error' ? 'error' :
+          data.event === 'tool_call' ? 'tool_execution' :
+          data.event === 'tool_response' ? 'tool_result' :
+          data.event === 'intermediate_text' ? 'analysis' :
+          'analysis';
+
+        const newComm = {
+          timestamp: new Date().toISOString(),
+          from_agent: data.agent || 'System',
+          to_agent: 'All',
+          message: data.message,
+          message_type: messageType,
+          severity: data.event === 'error' ? 'critical' : 'normal',
+          is_final: data.is_final || false
+        };
+
+        // Add to communications in real-time
+        setCommunications(prev => [newComm, ...prev]);
+
+        console.log('🤖 Agent Communication:', data.event, '-', data.agent, '-', data.message);
       }
     };
 
@@ -238,11 +262,11 @@ function App() {
       console.log('WebSocket disconnected');
     };
 
-    // Periodic refresh
+    // Periodic refresh (60 seconds to match backend broadcast interval)
     const interval = setInterval(() => {
       if (activeTab === 'dashboard') loadUnitsStatus();
-      if (activeTab === 'communications') loadCommunications();
-    }, 5000);
+      // Communications now come via WebSocket only (real-time Google ADK messages)
+    }, 60000);
 
     return () => {
       ws.close();
@@ -259,14 +283,7 @@ function App() {
     }
   };
 
-  const loadCommunications = async () => {
-    try {
-      const data = await api.getAgentCommunications();
-      setCommunications(data);
-    } catch (error) {
-      console.error('Error loading communications:', error);
-    }
-  };
+  // loadCommunications removed - now using real-time WebSocket for Google ADK messages only
 
   const handleAnalyticsQuery = async () => {
     if (!analyticsQuery.trim()) return;
@@ -500,7 +517,7 @@ function App() {
         {/* ========== END NEW COMPONENT RENDERS ========== */}
       </main>
 
-      <style jsx>{`
+      <style>{`
         .app {
           min-height: 100vh;
           background: linear-gradient(135deg, #0a0e1a 0%, #141b2d 100%);

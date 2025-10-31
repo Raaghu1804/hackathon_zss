@@ -41,6 +41,11 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Google Cloud Credentials - NEVER COMMIT!
+jkcement-hackathon-c9b677ac6373.json
+*-hackathon-*.json
+service-account*.json
+
 # Database
 *.db
 *.sqlite
