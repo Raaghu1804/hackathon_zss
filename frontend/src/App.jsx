@@ -286,17 +286,18 @@ function App() {
   // loadCommunications removed - now using real-time WebSocket for Google ADK messages only
 
   const handleAnalyticsQuery = async () => {
-    if (!analyticsQuery.trim()) return;
+  if (!analyticsQuery.trim()) return;
 
-    setLoading(true);
-    try {
-      const response = await api.queryAnalytics(analyticsQuery);
-      setAnalyticsResponse(response);
-    } catch (error) {
-      console.error('Error querying analytics:', error);
-    }
-    setLoading(false);
-  };
+  setAnalyticsResponse(null);  // ✅ Clear previous response
+  setLoading(true);
+  try {
+    const response = await api.queryAnalytics(analyticsQuery);
+    setAnalyticsResponse(response);
+  } catch (error) {
+    console.error('Error querying analytics:', error);
+  }
+  setLoading(false);
+};
 
   const renderDashboard = () => (
     <div className="dashboard-container">
