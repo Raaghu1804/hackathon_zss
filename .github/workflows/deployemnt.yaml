@@ -29,7 +29,7 @@ jobs:
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool/attribute.repository/Raaghu1804/hackathon_zss'
+          workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool'
           service_account: 'jkcement-deployment@jkcement-hackathon.iam.gserviceaccount.com'
           project_id: ${{ env.PROJECT_ID }}
           export_default_credentials: true
@@ -92,7 +92,7 @@ jobs:
         id: auth
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool/attribute.repository/Raaghu1804/hackathon_zss'
+          workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool'
           service_account: 'jkcement-deployment@jkcement-hackathon.iam.gserviceaccount.com'
           project_id: ${{ env.PROJECT_ID }}
           export_default_credentials: true
