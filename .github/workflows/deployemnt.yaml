@@ -6,13 +6,15 @@ on:
 
 env:
   PROJECT_ID: jkcement-hackathon
-  SERVICE: jkcement
+  SERVICE_BACKEND: jkcement-backend
+  SERVICE_FRONTEND: jkcement-frontend
+
   REGION: asia-south1
   REPO: hackathon
   ENVIRONMENT: prod
 
 jobs:
-  deploy:
+  deploy-backend:
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -40,15 +42,16 @@ jobs:
 
       - name: Push docker image to GCP Artifacts Registry
         run: |-
-          docker build --build-arg VERSION=$VERSION -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:latest" .
-          docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:latest"
+          cd backend
+          docker build --build-arg VERSION=$VERSION -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_BACKEND }}:latest" .
+          docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_BACKEND }}:latest"
 
       - id: 'deploy-to-dev'
         uses: 'google-github-actions/deploy-cloudrun@v1'
         with:
-          service: '${{ env.SERVICE }}-preprod'
+          service: '${{ env.SERVICE_BACKEND }}'
           region: '${{ env.REGION }}'
-          image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:latest'
+          image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_BACKEND }}:latest'
           project_id: '${{ env.PROJECT_ID }}'
           env_vars: |-
             PROJECT=${{ env.PROJECT_ID }}
@@ -66,6 +69,69 @@ jobs:
             --service-account=sreenivas@jkcement-hackathon.iam.gserviceaccount.com
             --min-instances=1
             --max-instances=2         
+            --memory=4Gi
+            --cpu=2
+            --execution-environment=gen2
+            --timeout=300
+
+      - name: Show Output
+        run: echo ${{ steps.deploy.outputs.url }}
+
+  deploy-frontend:
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Google Auth
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'jkcement-deployment@jkcement-hackathon.iam.gserviceaccount.com'
+          project_id: ${{ env.PROJECT_ID }}
+          export_default_credentials: true
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: Configure gcloud docker
+        run: gcloud auth configure-docker europe-west4-docker.pkg.dev --quiet
+
+      - name: Push docker image to GCP Artifacts Registry
+        run: |-
+          cd frontend
+          docker build --build-arg VERSION=$VERSION -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_FRONTEND }}:latest" .
+          docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_FRONTEND }}:latest"
+
+      - id: 'deploy-to-dev'
+        uses: 'google-github-actions/deploy-cloudrun@v1'
+        with:
+          service: '${{ env.SERVICE_FRONTEND }}'
+          region: '${{ env.REGION }}'
+          image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE_FRONTEND }}:latest'
+          project_id: '${{ env.PROJECT_ID }}'
+          env_vars: |-
+            PROJECT=${{ env.PROJECT_ID }}
+            PROJECT_ID=${{ env.PROJECT_ID }}
+            LOCATION=${{ env.REGION }}
+            - GEMINI_API_KEY=${GEMINI_API_KEY:-your_api_key_here}
+            - DATABASE_URL=sqlite:///./cement_plant.db
+            - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+
+          flags: |-
+            --ingress=all
+            --allow-unauthenticated
+            --vpc-connector=projects/jkcement-hackathon/locations/asia-south1/connectors/jk-cement
+            --vpc-egress=all-traffic
+            --service-account=sreenivas@jkcement-hackathon.iam.gserviceaccount.com
+            --min-instances=1
+            --max-instances=2
             --memory=4Gi
             --cpu=2
             --execution-environment=gen2
