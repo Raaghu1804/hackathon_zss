@@ -59,7 +59,7 @@ jobs:
             PROJECT_ID=${{ env.PROJECT_ID }}
             LOCATION=${{ env.REGION }}
             DATABASE_URL=sqlite:///./cement_plant.db
-            CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+            CORS_ORIGINS=http://localhost:3000
           flags: |-
             --ingress=all
             --allow-unauthenticated
@@ -121,7 +121,7 @@ jobs:
             PROJECT_ID=${{ env.PROJECT_ID }}
             LOCATION=${{ env.REGION }}
             DATABASE_URL=sqlite:///./cement_plant.db
-            CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+            CORS_ORIGINS=http://localhost:3000
           flags: |-
             --ingress=all
             --allow-unauthenticated
