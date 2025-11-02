@@ -30,7 +30,7 @@ jobs:
         uses: 'google-github-actions/auth@v2'
         with:
           workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-          service_account: 'jkcement-deployment@jkcement-hackathon.iam.gserviceaccount.com'
+          service_account: 'deploy-demo@jkcement-hackathon.iam.gserviceaccount.com'
           project_id: ${{ env.PROJECT_ID }}
           export_default_credentials: true
 
@@ -93,7 +93,7 @@ jobs:
         uses: 'google-github-actions/auth@v2'
         with:
           workload_identity_provider: 'projects/753775305781/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-          service_account: 'jkcement-deployment@jkcement-hackathon.iam.gserviceaccount.com'
+          service_account: 'deploy-demo@jkcement-hackathon.iam.gserviceaccount.com'
           project_id: ${{ env.PROJECT_ID }}
           export_default_credentials: true
 
