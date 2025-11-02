@@ -2,7 +2,7 @@ name: Deploy-to-Preprod
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "final" ]
 
 env:
   PROJECT_ID: jkcement-hackathon
