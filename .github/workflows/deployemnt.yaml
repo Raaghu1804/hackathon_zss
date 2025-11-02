@@ -58,7 +58,6 @@ jobs:
             PROJECT=${{ env.PROJECT_ID }}
             PROJECT_ID=${{ env.PROJECT_ID }}
             LOCATION=${{ env.REGION }}
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             DATABASE_URL=sqlite:///./cement_plant.db
             CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
           flags: |-
@@ -121,7 +120,6 @@ jobs:
             PROJECT=${{ env.PROJECT_ID }}
             PROJECT_ID=${{ env.PROJECT_ID }}
             LOCATION=${{ env.REGION }}
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             DATABASE_URL=sqlite:///./cement_plant.db
             CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
           flags: |-
