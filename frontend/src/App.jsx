@@ -1,7 +1,7 @@
 // frontend/src/App.jsx - COMPLETE UPDATED VERSION
 
 import React, { useState, useEffect } from 'react';
-import { Activity, Cpu, MessageSquare, BarChart3, AlertCircle, TrendingUp, Server, Gauge, Wrench, Fuel, Leaf } from 'lucide-react';
+import { Activity, Cpu, MessageSquare, BarChart3, AlertCircle, TrendingUp, Server, Gauge, Wrench, Fuel, Leaf, Target, Lightbulb } from 'lucide-react';
 
 // Import new components
 import PredictiveMaintenance from './components/PredictiveMaintenance';
@@ -155,6 +155,116 @@ const UnitStatusCard = ({ unit, data }) => {
 };
 
 // Communication Item Component
+// Helper function to parse JSON from markdown code blocks
+const parseJsonFromMarkdown = (message) => {
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+  const match = message.match(jsonRegex);
+
+  if (match) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (e) {
+      console.error('Failed to parse JSON:', e);
+      return null;
+    }
+  }
+  return null;
+};
+
+// Component to display structured optimization results
+const OptimizationResult = ({ data }) => {
+  const [expandedSection, setExpandedSection] = useState('all');
+
+  return (
+    <div className="optimization-result">
+      {/* Current State Section */}
+      <div className="result-section">
+        <div className="section-header" onClick={() => setExpandedSection(expandedSection === 'current' ? null : 'current')}>
+          <Activity size={18} />
+          <h4>Current State</h4>
+          <span className="expand-icon">{expandedSection === 'current' ? '−' : '+'}</span>
+        </div>
+        {expandedSection === 'current' && (
+          <div className="section-content">
+            {Object.entries(data.current_state || {}).map(([unit, params]) => (
+              <div key={unit} className="unit-card">
+                <h5>{unit.replace(/_/g, ' ').toUpperCase()}</h5>
+                <div className="params-grid">
+                  {Object.entries(params).map(([key, value]) => (
+                    <div key={key} className="param-item">
+                      <span className="param-label">{key.replace(/_/g, ' ')}:</span>
+                      <span className="param-value">{typeof value === 'number' ? value.toFixed(2) : value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Refined Targets Section */}
+      <div className="result-section highlight">
+        <div className="section-header" onClick={() => setExpandedSection(expandedSection === 'targets' ? null : 'targets')}>
+          <Target size={18} />
+          <h4>Optimized Targets</h4>
+          <span className="expand-icon">{expandedSection === 'targets' ? '−' : '+'}</span>
+        </div>
+        {expandedSection === 'targets' && (
+          <div className="section-content">
+            {Object.entries(data.refined_targets || {}).map(([unit, params]) => (
+              <div key={unit} className="unit-card target-card">
+                <h5>{unit.replace(/_/g, ' ').toUpperCase()}</h5>
+                <div className="params-grid">
+                  {Object.entries(params).map(([key, value]) => (
+                    <div key={key} className="param-item">
+                      <span className="param-label">{key.replace(/target_|_/g, ' ')}:</span>
+                      <span className="param-value target-value">{typeof value === 'number' ? value.toFixed(2) : value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Optimization Rationale */}
+      {data.optimization_rationale && (
+        <div className="result-section">
+          <div className="section-header">
+            <Lightbulb size={18} />
+            <h4>Optimization Strategy</h4>
+          </div>
+          <div className="section-content">
+            <p className="rationale-text">{data.optimization_rationale}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Expected Benefits */}
+      {data.expected_benefits && (
+        <div className="result-section benefits">
+          <div className="section-header">
+            <TrendingUp size={18} />
+            <h4>Expected Benefits</h4>
+          </div>
+          <div className="section-content">
+            <div className="benefits-grid">
+              {Object.entries(data.expected_benefits).map(([key, value]) => (
+                <div key={key} className="benefit-card">
+                  <span className="benefit-label">{key.replace(/_/g, ' ')}</span>
+                  <span className="benefit-value">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CommunicationItem = ({ comm }) => {
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
@@ -170,6 +280,10 @@ const CommunicationItem = ({ comm }) => {
     warning: '#ff9800',
     critical: '#f44336'
   };
+
+  // Try to parse JSON from message
+  const parsedData = parseJsonFromMarkdown(comm.message);
+  const isOptimizationResult = parsedData && parsedData.current_state && parsedData.refined_targets;
 
   return (
     <div className="comm-item">
@@ -189,7 +303,14 @@ const CommunicationItem = ({ comm }) => {
           <span className="timestamp">{formatTime(comm.timestamp)}</span>
         </div>
       </div>
-      <div className="comm-message">{comm.message}</div>
+
+      {/* Display structured optimization result or plain message */}
+      {isOptimizationResult ? (
+        <OptimizationResult data={parsedData} />
+      ) : (
+        <div className="comm-message">{comm.message}</div>
+      )}
+
       {comm.action_taken && (
         <div className="comm-action">
           <strong>Action:</strong> {comm.action_taken}
@@ -933,6 +1054,172 @@ function App() {
           padding-top: 1rem;
           border-top: 1px solid #2a3553;
           color: #a8b2d1;
+        }
+
+        /* Optimization Result Styles */
+        .optimization-result {
+          margin-top: 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+
+        .result-section {
+          background: rgba(15, 23, 42, 0.6);
+          border: 1px solid #334155;
+          border-radius: 8px;
+          overflow: hidden;
+          transition: all 0.3s ease;
+        }
+
+        .result-section.highlight {
+          border-color: #10b981;
+          box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+        }
+
+        .result-section.benefits {
+          border-color: #f59e0b;
+          box-shadow: 0 0 20px rgba(245, 158, 11, 0.1);
+        }
+
+        .section-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1rem;
+          background: rgba(30, 41, 59, 0.5);
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+
+        .section-header:hover {
+          background: rgba(30, 41, 59, 0.8);
+        }
+
+        .section-header h4 {
+          margin: 0;
+          flex: 1;
+          font-size: 1rem;
+          font-weight: 600;
+          color: #e2e8f0;
+        }
+
+        .expand-icon {
+          color: #64748b;
+          font-size: 1.25rem;
+          font-weight: bold;
+        }
+
+        .section-content {
+          padding: 1rem;
+          animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .unit-card {
+          background: rgba(30, 41, 59, 0.4);
+          border: 1px solid #334155;
+          border-radius: 6px;
+          padding: 1rem;
+          margin-bottom: 0.75rem;
+        }
+
+        .unit-card:last-child {
+          margin-bottom: 0;
+        }
+
+        .unit-card.target-card {
+          border-color: #10b981;
+          background: rgba(16, 185, 129, 0.05);
+        }
+
+        .unit-card h5 {
+          margin: 0 0 0.75rem 0;
+          color: #00bcd4;
+          font-size: 0.9rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .params-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 0.75rem;
+        }
+
+        .param-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.5rem;
+          background: rgba(15, 23, 42, 0.5);
+          border-radius: 4px;
+          border-left: 2px solid #475569;
+        }
+
+        .param-label {
+          color: #94a3b8;
+          font-size: 0.85rem;
+          text-transform: capitalize;
+        }
+
+        .param-value {
+          color: #e2e8f0;
+          font-weight: 600;
+          font-size: 0.9rem;
+        }
+
+        .param-value.target-value {
+          color: #10b981;
+          font-weight: 700;
+        }
+
+        .rationale-text {
+          margin: 0;
+          line-height: 1.7;
+          color: #cbd5e1;
+          font-size: 0.95rem;
+        }
+
+        .benefits-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 1rem;
+        }
+
+        .benefit-card {
+          background: rgba(245, 158, 11, 0.05);
+          border: 1px solid rgba(245, 158, 11, 0.3);
+          border-radius: 6px;
+          padding: 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+
+        .benefit-label {
+          color: #f59e0b;
+          font-size: 0.8rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .benefit-value {
+          color: #fde68a;
+          font-size: 0.95rem;
+          line-height: 1.5;
         }
 
         .empty-state {
