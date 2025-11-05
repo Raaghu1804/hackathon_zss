@@ -117,3 +117,5 @@ uvicorn==0.38.0
 watchdog==6.0.0
 websockets==15.0.1
 zipp==3.23.0
+aiosqlite==0.21.0
+SQLAlchemy==2.0.44
