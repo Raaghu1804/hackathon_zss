@@ -23,7 +23,8 @@ const FuelOptimizer = () => {
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_BASE}/api/fuel/optimize?total_energy_gj=${energyRequired}&cost_priority=${costPriority}&max_afr=${maxAFR}`
+        `${API_BASE}/api/fuel/optimize?total_energy_gj=${energyRequired}&cost_priority=${costPriority}&max_afr=${maxAFR}`,
+        { method: 'POST' }
       );
       const data = await response.json();
       setOptimization(data);

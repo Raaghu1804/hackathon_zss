@@ -260,7 +260,7 @@ class AlternativeFuelOptimizer:
         """
 
         try:
-            response = await gemini_service.model.generate_content(prompt)
+            response = gemini_service.model.generate_content(prompt)
             result_text = response.text.strip()
             if result_text.startswith('```json'):
                 result_text = result_text[7:]

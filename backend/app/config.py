@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = "AIzaSyBvIzIMpPcqUduNF6rSUL2o-ClYWO4GtTA"
 
     # CORS
-    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ORIGINS: str = "http://localhost:3000"
 
     # Simulation Settings
     SIMULATION_INTERVAL: int = 60  # seconds
