@@ -70,7 +70,7 @@ jobs:
             --memory=4Gi
             --cpu=2
             --execution-environment=gen2
-            --timeout=300
+            --timeout=1200
 
       - name: Show Backend Service URL
         run: echo "✅ Backend deployed at ${{ steps.deploy.outputs.url }}"
@@ -131,7 +131,7 @@ jobs:
             --memory=4Gi
             --cpu=2
             --execution-environment=gen2
-            --timeout=300
+            --timeout=1200
 
       - name: Show Frontend Service URL
         run: echo "✅ Frontend deployed at ${{ steps.deploy.outputs.url }}"

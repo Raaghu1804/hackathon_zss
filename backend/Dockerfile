@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 8000
+# Expose port 8080 (Cloud Run default)
+EXPOSE 8080
 
-# Run the application
-CMD ["python", "-m", "app.main"]
+# Run the application - reads PORT env var or defaults to 8080
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
