@@ -58,7 +58,7 @@ jobs:
             PROJECT=${{ env.PROJECT_ID }}
             PROJECT_ID=${{ env.PROJECT_ID }}
             LOCATION=${{ env.REGION }}
-            DATABASE_URL=sqlite:///./cement_plant.db
+            DATABASE_URL=sqlite+aiosqlite:///./cement_plant.db
           flags: |-
             --ingress=all
             --allow-unauthenticated
